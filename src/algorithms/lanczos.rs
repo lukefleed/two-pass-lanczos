@@ -417,6 +417,9 @@ where
     let mut mem = MemBuffer::new(operator.apply_scratch(1, Par::Seq));
     let mut stack = MemStack::new(&mut mem);
 
+    // Pre-allocate work vector outside the loop to avoid repeated heap allocations
+    let mut work = Mat::<T>::zeros(b.nrows(), 1);
+
     for j in 0..t_k.steps_taken - 1 {
         let alpha_j = T::Real::copy_impl(&t_k.alphas[j]);
         let beta_j = T::Real::copy_impl(&t_k.betas[j]);
@@ -427,7 +430,6 @@ where
         };
 
         // Re-execute the recurrence step to get the unnormalized next vector in work.
-        let mut work = Mat::<T>::zeros(b.nrows(), 1);
         let (computed_alpha, computed_beta_option) = lanczos_recurrence_step(
             operator,
             work.as_mut(),
@@ -486,9 +488,9 @@ where
             *x_i = add(x_i, &mul(&coeff, v_i));
         });
 
-        // Update vectors for the next iteration
-        v_prev = v_curr;
-        v_curr = work;
+        // Update vectors for the next iteration using swap to avoid cloning
+        core::mem::swap(&mut v_prev, &mut v_curr);
+        core::mem::swap(&mut v_curr, &mut work);
     }
 
     Ok(x_k)
@@ -567,7 +569,7 @@ mod tests {
         let last_step = last_step.unwrap();
 
         let v_k = result_k.v_k;
-        let v_k_plus_1 = iter.v_curr.clone(); // Get the current vector from iterator state
+        let v_k_plus_1 = &iter.v_curr; // Use reference instead of clone
         let beta_k = last_step.beta;
 
         let t_k_mat = {
@@ -586,7 +588,7 @@ mod tests {
         let mut e_k = Mat::zeros(k, 1);
         e_k.as_mut()[(k - 1, 0)] = 1.0;
         let residual = &a * &v_k - &v_k * &t_k_mat;
-        let expected_residual = &v_k_plus_1 * e_k.as_ref().adjoint() * Scale(beta_k);
+        let expected_residual = v_k_plus_1 * e_k.as_ref().adjoint() * Scale(beta_k);
 
         let diff = &residual - &expected_residual;
         assert!(
