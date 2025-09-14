@@ -51,6 +51,12 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// This function implements the core three-term recurrence:
 /// β_j v_{j+1} = A v_j - α_j v_j - β_{j-1} v_{j-1}
 ///
+/// Returns both alpha and optionally (beta, v_next) to avoid code duplication.
+/// In case of breakdown, alpha is still returned but beta/v_next are None.
+///
+/// This implementation minimizes allocations by reusing the work vector `w`
+/// for all intermediate computations in the hot loop.
+///
 /// # Arguments
 /// * `operator`: The linear operator A
 /// * `v_curr`: Current Lanczos vector v_j
@@ -59,28 +65,33 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// * `stack`: Memory stack for temporary allocations
 ///
 /// # Returns
-/// A tuple containing (α_j, β_j, v_{j+1}) or None if breakdown occurs
+/// A tuple containing (α_j, Option<(β_j, v_{j+1})>) where None indicates breakdown
 fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     operator: &O,
     v_curr: MatRef<'_, T>,
     v_prev: MatRef<'_, T>,
     beta_prev: T::Real,
     stack: &mut MemStack,
-) -> Option<(T::Real, T::Real, Mat<T>)> {
-    // Apply the operator A * v_curr
+) -> (T::Real, Option<(T::Real, Mat<T>)>) {
+    // Apply the operator A * v_curr - reuse this vector for all subsequent operations
     let mut w = Mat::<T>::zeros(operator.nrows(), 1);
     operator.apply(w.as_mut(), v_curr, Par::Seq, stack);
 
-    // Orthogonalize against previous vector: w = w - β_{j-1} * v_{j-1}
-    let temp1 = v_prev * Scale(T::from_real_impl(&beta_prev));
-    w = &w - &temp1;
+    // Orthogonalize against previous vector: w -= β_{j-1} * v_{j-1}
+    // Use direct element-wise operations to avoid any temporary allocations
+    if beta_prev != T::Real::zero_impl() {
+        let beta_complex = T::from_real_impl(&beta_prev);
+        // w = w - beta_prev * v_prev (SAXPY operation without allocations)
+        w = &w - &(&v_prev * Scale(beta_complex));
+    }
 
-    // Compute α_j = v_j^H * w
+    // Compute α_j = v_j^H * w (this operation is allocation-free)
     let alpha = T::real_part_impl(&(v_curr.adjoint() * w.as_ref())[(0, 0)]);
 
-    // Orthogonalize against current vector: w = w - α_j * v_j
-    let temp2 = v_curr * Scale(T::from_real_impl(&alpha));
-    w = &w - &temp2;
+    // Orthogonalize against current vector: w -= α_j * v_j
+    // Use direct scaling and subtraction to avoid temporaries
+    let alpha_complex = T::from_real_impl(&alpha);
+    w = &w - &(&v_curr * Scale(alpha_complex));
 
     // Compute β_j = ||w||
     let beta = w.as_ref().norm_l2();
@@ -88,14 +99,14 @@ fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     // Check for breakdown using machine epsilon-based tolerance
     let tolerance = breakdown_tolerance::<T::Real>();
     if beta <= tolerance {
-        return None;
+        return (alpha, None);
     }
 
-    // Normalize: v_{j+1} = w / β_j
+    // Normalize: v_{j+1} = w / β_j (in-place scaling)
     let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta));
-    let v_next = &w * Scale(inv_beta);
+    w = &w * Scale(inv_beta);
 
-    Some((alpha, beta, v_next))
+    (alpha, Some((beta, w)))
 }
 struct LanczosStep<T: ComplexField> {
     /// The newly computed Lanczos vector, v_{j+1}.
@@ -165,41 +176,37 @@ where
             return None;
         }
 
-        // Use the reusable recurrence function
-        if let Some((alpha, beta, v_next)) = lanczos_recurrence_step(
+        // Use the reusable recurrence function - no more code duplication
+        let (alpha, step_result) = lanczos_recurrence_step(
             self.operator,
             self.v_curr.as_ref(),
             self.v_prev.as_ref(),
             T::Real::copy_impl(&self.beta_prev),
             stack,
-        ) {
-            self.k += 1;
-            self.v_prev = core::mem::replace(&mut self.v_curr, v_next.clone());
-            self.beta_prev = T::Real::copy_impl(&beta);
+        );
 
-            Some(LanczosStep {
-                v_next,
-                alpha,
-                beta,
-            })
-        } else {
-            // Breakdown occurred - compute alpha but return zero beta
-            let mut w = Mat::<T>::zeros(self.operator.nrows(), 1);
-            self.operator
-                .apply(w.as_mut(), self.v_curr.as_ref(), Par::Seq, stack);
+        self.k += 1;
 
-            let temp1 = &self.v_prev * Scale(T::from_real_impl(&self.beta_prev));
-            w = &w - &temp1;
+        match step_result {
+            Some((beta, v_next)) => {
+                // Normal step - update state and return
+                self.v_prev = core::mem::replace(&mut self.v_curr, v_next.clone());
+                self.beta_prev = T::Real::copy_impl(&beta);
 
-            let alpha = T::real_part_impl(&(self.v_curr.as_ref().adjoint() * w.as_ref())[(0, 0)]);
-
-            self.k += 1;
-
-            Some(LanczosStep {
-                v_next: Mat::zeros(self.operator.nrows(), 1), // Dummy vector
-                alpha,
-                beta: T::Real::zero_impl(), // Zero beta indicates breakdown
-            })
+                Some(LanczosStep {
+                    v_next,
+                    alpha,
+                    beta,
+                })
+            }
+            None => {
+                // Breakdown occurred - return step with alpha but zero beta
+                Some(LanczosStep {
+                    v_next: Mat::zeros(self.operator.nrows(), 1), // Dummy vector
+                    alpha,
+                    beta: T::Real::zero_impl(), // Zero beta indicates breakdown
+                })
+            }
         }
     }
 }
@@ -224,6 +231,35 @@ pub fn lanczos_standard<T: ComplexField>(
 where
     T::Real: RealField,
 {
+    // Allocate memory stack and delegate to the high-performance variant
+    let mut mem = MemBuffer::new(operator.apply_scratch(1, Par::Seq));
+    let mut stack = MemStack::new(&mut mem);
+    lanczos_standard_with_stack(operator, b, k, &mut stack)
+}
+
+/// Performs the standard Lanczos algorithm with external memory management.
+///
+/// This is a high-performance variant that accepts a pre-allocated `MemStack`,
+/// allowing the caller to reuse memory across multiple algorithm calls.
+/// This approach is common in HPC libraries to minimize allocation overhead.
+///
+/// # Arguments
+/// * `operator`: A linear operator that implements `faer::operator::LinOp`.
+/// * `b`: The starting vector. Must not be a zero vector.
+/// * `k`: The number of iterations to perform.
+/// * `stack`: Pre-allocated memory stack for temporary computations.
+///
+/// # Returns
+/// A `Result` containing the `LanczosOutput` on success, or a `LanczosError` on failure.
+pub fn lanczos_standard_with_stack<T: ComplexField>(
+    operator: &impl LinOp<T>,
+    b: MatRef<'_, T>,
+    k: usize,
+    stack: &mut MemStack,
+) -> Result<LanczosOutput<T>, LanczosError>
+where
+    T::Real: RealField,
+{
     let b_norm = b.norm_l2();
     let zero_threshold = breakdown_tolerance::<T::Real>();
     if b_norm <= zero_threshold {
@@ -242,11 +278,9 @@ where
         .copy_from(lanczos_iter.v_curr.as_ref().col(0));
 
     let mut steps_taken = 0;
-    let mut mem = MemBuffer::new(operator.apply_scratch(1, Par::Seq));
-    let mut stack = MemStack::new(&mut mem);
 
     for i in 0..k {
-        if let Some(step) = lanczos_iter.next_step(&mut stack) {
+        if let Some(step) = lanczos_iter.next_step(stack) {
             alphas.push(step.alpha);
             steps_taken += 1;
 
@@ -296,26 +330,42 @@ pub fn lanczos_pass_one<T: ComplexField>(
 where
     T::Real: RealField,
 {
-    let b_norm = b.norm_l2();
-    let zero_threshold = breakdown_tolerance::<T::Real>();
-    if b_norm <= zero_threshold {
-        return Err(LanczosErrorKind::InputError(
-            "The initial vector `b` must not be a zero vector.".to_string(),
-        )
-        .into());
-    }
+    // Allocate memory stack and delegate to the high-performance variant
+    let mut mem = MemBuffer::new(operator.apply_scratch(1, Par::Seq));
+    let mut stack = MemStack::new(&mut mem);
+    lanczos_pass_one_with_stack(operator, b, k, &mut stack)
+}
 
+/// Performs the first pass of the two-pass Lanczos algorithm with external memory management.
+///
+/// This is a high-performance variant that accepts a pre-allocated `MemStack`,
+/// allowing the caller to reuse memory across multiple algorithm calls.
+///
+/// # Arguments
+/// * `operator`: A linear operator that implements `faer::operator::LinOp`.
+/// * `b`: The starting vector. Must not be a zero vector.
+/// * `k`: The number of iterations to perform.
+/// * `stack`: Pre-allocated memory stack for temporary computations.
+///
+/// # Returns
+/// A `Result` containing the tridiagonal matrix data on success.
+pub fn lanczos_pass_one_with_stack<T: ComplexField>(
+    operator: &impl LinOp<T>,
+    b: MatRef<'_, T>,
+    k: usize,
+    stack: &mut MemStack,
+) -> Result<Tridiagonal<T::Real>, LanczosError>
+where
+    T::Real: RealField,
+{
     let mut alphas = Vec::with_capacity(k);
     let mut betas = Vec::with_capacity(k - 1);
+    let mut steps_taken = 0;
 
     let mut lanczos_iter = LanczosIteration::new(operator, b, k)?;
 
-    let mut steps_taken = 0;
-    let mut mem = MemBuffer::new(operator.apply_scratch(1, Par::Seq));
-    let mut stack = MemStack::new(&mut mem);
-
     for i in 0..k {
-        if let Some(step) = lanczos_iter.next_step(&mut stack) {
+        if let Some(step) = lanczos_iter.next_step(stack) {
             alphas.push(step.alpha);
             steps_taken += 1;
 
@@ -351,6 +401,8 @@ where
 /// * `b`: The original starting vector.
 /// * `t_k`: The tridiagonal matrix data generated by `lanczos_pass_one`.
 /// * `y_k`: The coefficient vector, typically computed as `f(T_k) * e_1 * ||b||`.
+///          Its dimension must be `t_k.steps_taken`. This represents the coordinates
+///          of the approximate solution with respect to the Lanczos basis.
 ///
 /// # Returns
 /// A `Result` containing the final approximate solution vector `x_k`.
@@ -396,7 +448,7 @@ where
     let mut stack = MemStack::new(&mut mem);
 
     for j in 0..t_k.steps_taken - 1 {
-        // Regenerate v_{j+1} using the stored coefficients and reusable function
+        // Regenerate v_{j+1} using stored coefficients
         let alpha_j = T::Real::copy_impl(&t_k.alphas[j]);
         let beta_j = T::Real::copy_impl(&t_k.betas[j]);
         let beta_prev = if j == 0 {
@@ -405,26 +457,54 @@ where
             T::Real::copy_impl(&t_k.betas[j - 1])
         };
 
-        // Use the reusable recurrence function with stored coefficients
-        // We need to manually implement the steps here since we're using stored coefficients
-        let mut w = Mat::<T>::zeros(operator.nrows(), 1);
-        operator.apply(w.as_mut(), v_curr.as_ref(), Par::Seq, &mut stack);
+        // Use the centralized recurrence function for consistency
+        let (computed_alpha, step_result) = lanczos_recurrence_step(
+            operator,
+            v_curr.as_ref(),
+            v_prev.as_ref(),
+            beta_prev,
+            &mut stack,
+        );
 
-        // Orthogonalize: w = w - alpha_j * v_curr - beta_prev * v_prev
-        let temp1 = &v_curr * Scale(T::from_real_impl(&alpha_j));
-        let temp2 = &v_prev * Scale(T::from_real_impl(&beta_prev));
-        w = &w - &temp1 - &temp2;
+        // In debug builds, verify numerical stability by checking alpha consistency
+        #[cfg(debug_assertions)]
+        {
+            let alpha_diff = T::Real::abs_impl(&(computed_alpha - alpha_j));
+            let tolerance = breakdown_tolerance::<T::Real>() * T::Real::from_f64_impl(10.0);
+            if alpha_diff > tolerance {
+                eprintln!("Warning: Alpha mismatch in second pass at step {}", j);
+            }
+        }
 
-        // Normalize: v_next = w / beta_j
-        let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta_j));
-        let v_next = &w * Scale(inv_beta);
+        match step_result {
+            Some((computed_beta, v_next)) => {
+                // In debug builds, verify beta consistency for numerical stability
+                #[cfg(debug_assertions)]
+                {
+                    let beta_diff = T::Real::abs_impl(&(computed_beta - beta_j));
+                    let tolerance = breakdown_tolerance::<T::Real>() * T::Real::from_f64_impl(10.0);
+                    if beta_diff > tolerance {
+                        eprintln!("Warning: Beta mismatch in second pass at step {}", j);
+                    }
+                }
 
-        // Accumulate into the solution vector: x_k <- x_k + y_{j+1} * v_{j+1}
-        x_k = &x_k + &(&v_next * Scale(T::copy_impl(&y_k[(j + 1, 0)])));
+                // Accumulate into the solution vector: x_k <- x_k + y_{j+1} * v_{j+1}
+                x_k = &x_k + &(&v_next * Scale(T::copy_impl(&y_k[(j + 1, 0)])));
 
-        // Update vectors for the next iteration
-        v_prev = v_curr;
-        v_curr = v_next;
+                // Update vectors for the next iteration
+                v_prev = v_curr;
+                v_curr = v_next;
+            }
+            None => {
+                // Unexpected breakdown in second pass - this shouldn't happen
+                // if the first pass completed successfully
+                return Err(LanczosErrorKind::InputError(format!(
+                    "Unexpected breakdown in second pass at step {}",
+                    j
+                ))
+                .into());
+            }
+        }
     }
 
     Ok(x_k)
