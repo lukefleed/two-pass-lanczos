@@ -6,8 +6,9 @@
 //! operate on any type that implements the `faer::matrix_free::LinOp` trait.
 
 use crate::error::{LanczosError, LanczosErrorKind};
+use faer::traits::math_utils::{mul, sub};
 use faer::{
-    Par, Scale,
+    Par,
     dyn_stack::{MemBuffer, MemStack},
     matrix_free::LinOp,
     prelude::*,
@@ -51,19 +52,26 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// This function implements the core three-term recurrence:
 /// β_j v_{j+1} = A v_j - α_j v_j - β_{j-1} v_{j-1}
 ///
-/// It returns both alpha and optionally (beta, v_next) to avoid code duplication.
-/// In case of breakdown, alpha is still returned but beta/v_next are None.
+/// It returns the unnormalized next Lanczos vector `w`, the scalar coefficient α_j,
+/// and an `Option<β_j>`. A `None` value for β_j indicates that a breakdown
+/// has occurred (β_j is numerically zero), and the iteration should terminate.
+///
+/// # Implementation Notes
+///
+/// The orthogonalization steps are implemented using `faer::zip!` to perform
+/// fused multiply-subtract operations (`w <- w - c*v`) in-place. This avoids intermediate
+/// memory allocations within the iterative loop, which is critical for performance
+/// in high-performance computing contexts.
 ///
 /// # Arguments
 /// * `operator`: The linear operator A.
 /// * `v_curr`: Current Lanczos vector v_j.
 /// * `v_prev`: Previous Lanczos vector v_{j-1}.
 /// * `beta_prev`: Previous beta coefficient β_{j-1}.
-/// * `stack`: Memory stack for temporary allocations.
+/// * `stack`: Memory stack for temporary allocations required by the operator.
 ///
 /// # Returns
-/// A tuple containing (`w`, α_j, Option<β_j>) where `w` is the unnormalized next vector
-/// and `None` for β_j indicates breakdown.
+/// A tuple containing (`w`, α_j, Option<β_j>), where `w` is the unnormalized next vector.
 fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     operator: &O,
     v_curr: MatRef<'_, T>,
@@ -75,21 +83,31 @@ fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     let mut w = Mat::<T>::zeros(operator.nrows(), 1);
     operator.apply(w.as_mut(), v_curr, Par::Seq, stack);
 
-    // Orthogonalize against previous vector: w = w - β_{j-1} * v_{j-1}
-    let temp1 = v_prev * Scale(T::from_real_impl(&beta_prev));
-    w = &w - &temp1;
+    // Orthogonalize w against the previous Lanczos vector v_{j-1}.
+    // This performs the operation w <- w - β_{j-1} * v_{j-1} in-place.
+    let beta_prev_scaled = T::from_real_impl(&beta_prev);
+    zip!(w.as_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
+        *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
+    });
 
-    // Compute α_j = v_j^H * w
+    // Compute the diagonal element α_j = v_j^H * w.
+    // At this point, w = A*v_j - β_{j-1}*v_{j-1}, which is the correct
+    // intermediate vector for computing α_j.
     let alpha = T::real_part_impl(&(v_curr.adjoint() * w.as_ref())[(0, 0)]);
 
-    // Orthogonalize against current vector: w = w - α_j * v_j
-    let temp2 = v_curr * Scale(T::from_real_impl(&alpha));
-    w = &w - &temp2;
+    // Orthogonalize w against the current Lanczos vector v_j.
+    // This performs the operation w <- w - α_j * v_j in-place.
+    let alpha_scaled = T::from_real_impl(&alpha);
+    zip!(w.as_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
+        *w_i = sub(w_i, &mul(&alpha_scaled, v_curr_i));
+    });
 
-    // Compute β_j = ||w||
+    // Compute the off-diagonal element β_j = ||w||_2.
+    // w is now the unnormalized next Lanczos vector, r_j.
     let beta = w.as_ref().norm_l2();
 
-    // Check for breakdown using machine epsilon-based tolerance
+    // Check for breakdown. If β_j is close to zero, the Krylov subspace
+    // is invariant, and the iteration must stop.
     let tolerance = breakdown_tolerance::<T::Real>();
     if beta <= tolerance {
         (w, alpha, None)
@@ -97,6 +115,7 @@ fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
         (w, alpha, Some(beta))
     }
 }
+
 struct LanczosStep<T: ComplexField> {
     /// The newly computed Lanczos vector, v_{j+1}.
     v_next: Mat<T>,
@@ -447,7 +466,7 @@ where
             .into());
         }
 
-        // Normalize using the stored beta_j from the first pass for performance.
+        // Normalize using the stored beta_j from the first pass for performance and reproducibility.
         let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta_j));
         let v_next = &w * Scale(inv_beta);
 
