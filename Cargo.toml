@@ -1,0 +1,52 @@
+[package]
+name = "lanczos-project"
+version = "0.1.0"
+edition = "2024"
+
+# Regular dependencies required to build and use the library.
+[dependencies]
+env_logger = "0.11.8"
+faer = "0.22.6"
+log = "0.4.28"
+rand = "0.9.2"
+thiserror = "2.0.16"
+
+# Development dependencies, only compiled for tests, benchmarks, and examples.
+[dev-dependencies]
+criterion = "0.7.0"
+
+# Configuration for benchmarks using Criterion.
+# We disable the default benchmark harness to use Criterion's custom one.
+[[bench]]
+name = "performance"
+harness = false
+
+[profile.dev.package.faer]
+opt-level = 3
+
+[profile.release]
+# Enable full optimizations.
+opt-level = 3
+# Enable Fat Link-Time Optimization for maximum cross-crate optimization.
+# This increases compile times but can yield significant performance gains.
+lto = "fat"
+# Include debug information in the release binary. This allows for meaningful
+# backtraces on panics or crashes with minimal performance impact. Essential for long-running jobs.
+debug = true
+# Disable integer overflow checks for performance, as is standard in release builds.
+overflow-checks = false
+# Disable debug assertions.
+debug-assertions = false
+# Force the entire crate to be compiled as a single unit, giving the optimizer
+# more context. This increases compile time but often improves performance.
+codegen-units = 1
+
+[profile.bench]
+# Inherits from 'release' but we can override specific settings for benchmarking.
+opt-level = 3
+lto = "fat"
+overflow-checks = false
+# Debug symbols are not needed for benchmarks, which can slightly reduce binary size.
+debug = false
+debug-assertions = false
+codegen-units = 1
