@@ -19,7 +19,7 @@ pub struct LanczosError(#[from] LanczosErrorKind);
 /// This separation allows for a clean `Display` implementation via [`thiserror`]
 /// while handling non-standard error types manually.
 #[derive(Error, Debug, PartialEq)]
-enum LanczosErrorKind {
+pub(crate) enum LanczosErrorKind {
     /// Occurs when the Lanczos iteration terminates prematurely because the beta
     /// coefficient becomes zero (or numerically indistinguishable from zero).
     #[error(
