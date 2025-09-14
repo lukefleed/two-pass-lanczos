@@ -41,6 +41,15 @@ pub(crate) enum LanczosErrorKind {
     #[error("Invalid input parameter: {0}")]
     InputError(String),
 
+    /// Indicates a mismatch in the dimensions of parameters provided to a function,
+    /// for reasons other than an invalid matrix-vector product.
+    #[error("Parameter mismatch: `{param_name}` expects size {expected}, but got {actual}.")]
+    ParameterMismatch {
+        param_name: String,
+        expected: usize,
+        actual: usize,
+    },
+
     /// Wraps an error originating from [`faer`]'s eigendecomposition module.
     #[error("A numerical error occurred during the eigendecomposition of T_k: {0:?}")]
     EvdError(faer::linalg::evd::EvdError),
@@ -78,6 +87,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parameter_mismatch_error_message() {
+        let error = LanczosError(LanczosErrorKind::ParameterMismatch {
+            param_name: "y_k".to_string(),
+            expected: 10,
+            actual: 9,
+        });
+        let expected_message = "Parameter mismatch: `y_k` expects size 10, but got 9.";
+        assert_eq!(error.to_string(), expected_message);
+    }
+
+    #[test]
     fn test_input_error_message() {
         let error = LanczosError(LanczosErrorKind::InputError(
             "The initial vector `b` must not be a zero vector.".to_string(),
@@ -91,7 +111,6 @@ mod tests {
     fn test_evd_error_message() {
         let evd_error = faer::linalg::evd::EvdError::NoConvergence;
         let error = LanczosError(LanczosErrorKind::EvdError(evd_error));
-        // Note: The message now uses the `Debug` format for the inner error.
         let expected_message =
             "A numerical error occurred during the eigendecomposition of T_k: NoConvergence";
         assert_eq!(error.to_string(), expected_message);

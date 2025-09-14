@@ -6,7 +6,7 @@
 //! operate on any type that implements the `faer::matrix_free::LinOp` trait.
 
 use crate::error::{LanczosError, LanczosErrorKind};
-use faer::traits::math_utils::{mul, sub};
+use faer::traits::math_utils::{add, mul, sub};
 use faer::{
     Par,
     dyn_stack::{MemBuffer, MemStack},
@@ -52,9 +52,10 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// This function implements the core three-term recurrence:
 /// β_j v_{j+1} = A v_j - α_j v_j - β_{j-1} v_{j-1}
 ///
-/// It returns the unnormalized next Lanczos vector `w`, the scalar coefficient α_j,
-/// and an `Option<β_j>`. A `None` value for β_j indicates that a breakdown
-/// has occurred (β_j is numerically zero), and the iteration should terminate.
+/// The result is written to the provided mutable matrix view `w`, which should be
+/// pre-allocated by the caller. It returns the scalar coefficient α_j and an
+/// `Option<β_j>`. A `None` value for β_j indicates that a breakdown has occurred
+/// (β_j is numerically zero), and the iteration should terminate.
 ///
 /// # Implementation Notes
 ///
@@ -65,60 +66,59 @@ fn breakdown_tolerance<T: RealField>() -> T {
 ///
 /// # Arguments
 /// * `operator`: The linear operator A.
+/// * `w`: Pre-allocated mutable matrix view for the output vector.
 /// * `v_curr`: Current Lanczos vector v_j.
 /// * `v_prev`: Previous Lanczos vector v_{j-1}.
 /// * `beta_prev`: Previous beta coefficient β_{j-1}.
 /// * `stack`: Memory stack for temporary allocations required by the operator.
 ///
 /// # Returns
-/// A tuple containing (`w`, α_j, Option<β_j>), where `w` is the unnormalized next vector.
+/// A tuple containing (α_j, Option<β_j>).
 fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     operator: &O,
+    mut w: MatMut<'_, T>,
     v_curr: MatRef<'_, T>,
     v_prev: MatRef<'_, T>,
     beta_prev: T::Real,
     stack: &mut MemStack,
-) -> (Mat<T>, T::Real, Option<T::Real>) {
+) -> (T::Real, Option<T::Real>) {
     // Apply the operator: w = A * v_curr
-    let mut w = Mat::<T>::zeros(operator.nrows(), 1);
-    operator.apply(w.as_mut(), v_curr, Par::Seq, stack);
+    operator.apply(w.rb_mut(), v_curr, Par::Seq, stack);
 
     // Orthogonalize w against the previous Lanczos vector v_{j-1}.
     // This performs the operation w <- w - β_{j-1} * v_{j-1} in-place.
     let beta_prev_scaled = T::from_real_impl(&beta_prev);
-    zip!(w.as_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
+    zip!(w.rb_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
         *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
     });
 
     // Compute the diagonal element α_j = v_j^H * w.
     // At this point, w = A*v_j - β_{j-1}*v_{j-1}, which is the correct
     // intermediate vector for computing α_j.
-    let alpha = T::real_part_impl(&(v_curr.adjoint() * w.as_ref())[(0, 0)]);
+    let alpha = T::real_part_impl(&(v_curr.adjoint() * w.rb())[(0, 0)]);
 
     // Orthogonalize w against the current Lanczos vector v_j.
     // This performs the operation w <- w - α_j * v_j in-place.
     let alpha_scaled = T::from_real_impl(&alpha);
-    zip!(w.as_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
+    zip!(w.rb_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
         *w_i = sub(w_i, &mul(&alpha_scaled, v_curr_i));
     });
 
     // Compute the off-diagonal element β_j = ||w||_2.
     // w is now the unnormalized next Lanczos vector, r_j.
-    let beta = w.as_ref().norm_l2();
+    let beta = w.rb().norm_l2();
 
     // Check for breakdown. If β_j is close to zero, the Krylov subspace
     // is invariant, and the iteration must stop.
     let tolerance = breakdown_tolerance::<T::Real>();
     if beta <= tolerance {
-        (w, alpha, None)
+        (alpha, None)
     } else {
-        (w, alpha, Some(beta))
+        (alpha, Some(beta))
     }
 }
 
 struct LanczosStep<T: ComplexField> {
-    /// The newly computed Lanczos vector, v_{j+1}.
-    v_next: Mat<T>,
     /// The diagonal element α_j.
     alpha: T::Real,
     /// The off-diagonal element β_j.
@@ -129,6 +129,7 @@ struct LanczosStep<T: ComplexField> {
 ///
 /// This struct provides a clean, stateful representation of the Lanczos
 /// recurrence, which can be consumed by different algorithm implementations.
+/// It manages work vectors to avoid repeated heap allocations.
 struct LanczosIteration<'a, T: ComplexField, O: LinOp<T>> {
     /// A reference to the linear operator.
     operator: &'a O,
@@ -136,6 +137,8 @@ struct LanczosIteration<'a, T: ComplexField, O: LinOp<T>> {
     v_prev: Mat<T>,
     /// The current Lanczos vector, v_j.
     v_curr: Mat<T>,
+    /// Work vector for intermediate computations.
+    work: Mat<T>,
     /// The previous beta coefficient, β_{j-1}.
     beta_prev: T::Real,
     /// The current iteration number.
@@ -171,6 +174,7 @@ where
             operator,
             v_prev: Mat::zeros(b.nrows(), 1),
             v_curr: v1,
+            work: Mat::zeros(b.nrows(), 1),
             beta_prev: T::Real::zero_impl(),
             k: 0,
             max_k,
@@ -183,9 +187,10 @@ where
             return None;
         }
 
-        // Use the reusable recurrence function to avoid code duplication.
-        let (w, alpha, beta_option) = lanczos_recurrence_step(
+        // Use the reusable recurrence function with pre-allocated work vector.
+        let (alpha, beta_option) = lanczos_recurrence_step(
             self.operator,
+            self.work.as_mut(),
             self.v_curr.as_ref(),
             self.v_prev.as_ref(),
             T::Real::copy_impl(&self.beta_prev),
@@ -196,24 +201,23 @@ where
 
         match beta_option {
             Some(beta) => {
-                // Normalize: v_{j+1} = w / β_j
+                // Normalize: v_{j+1} = work / β_j (in-place)
                 let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta));
-                let v_next = &w * Scale(inv_beta);
+                zip!(self.work.as_mut()).for_each(|unzip!(w_i)| {
+                    *w_i = mul(w_i, &inv_beta);
+                });
 
-                // Update state for the next iteration.
-                self.v_prev = core::mem::replace(&mut self.v_curr, v_next.clone());
+                // Update state for the next iteration using move semantics (no cloning).
+                // Swap the vectors to avoid cloning: v_prev <- v_curr, v_curr <- work
+                core::mem::swap(&mut self.v_prev, &mut self.v_curr);
+                core::mem::swap(&mut self.v_curr, &mut self.work);
                 self.beta_prev = T::Real::copy_impl(&beta);
 
-                Some(LanczosStep {
-                    v_next,
-                    alpha,
-                    beta,
-                })
+                Some(LanczosStep { alpha, beta })
             }
             None => {
                 // Breakdown occurred. Return the computed alpha but a zero beta.
                 Some(LanczosStep {
-                    v_next: Mat::zeros(self.operator.nrows(), 1), // Dummy vector
                     alpha,
                     beta: T::Real::zero_impl(),
                 })
@@ -276,7 +280,9 @@ where
 
             if i < k - 1 {
                 betas.push(step.beta);
-                v_k.col_mut(i + 1).copy_from(step.v_next.as_ref().col(0));
+                // Copy the current vector from the iterator state after the step
+                v_k.col_mut(i + 1)
+                    .copy_from(lanczos_iter.v_curr.as_ref().col(0));
             }
         } else {
             break;
@@ -420,9 +426,11 @@ where
             T::Real::copy_impl(&t_k.betas[j - 1])
         };
 
-        // Re-execute the recurrence step to get the unnormalized next vector `w`.
-        let (w, computed_alpha, computed_beta_option) = lanczos_recurrence_step(
+        // Re-execute the recurrence step to get the unnormalized next vector in work.
+        let mut work = Mat::<T>::zeros(b.nrows(), 1);
+        let (computed_alpha, computed_beta_option) = lanczos_recurrence_step(
             operator,
+            work.as_mut(),
             v_curr.as_ref(),
             v_prev.as_ref(),
             beta_prev,
@@ -468,14 +476,19 @@ where
 
         // Normalize using the stored beta_j from the first pass for performance and reproducibility.
         let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta_j));
-        let v_next = &w * Scale(inv_beta);
+        zip!(work.as_mut()).for_each(|unzip!(w_i)| {
+            *w_i = mul(w_i, &inv_beta);
+        });
 
-        // Accumulate into the solution vector: x_k <- x_k + y_{j+1} * v_{j+1}
-        x_k = &x_k + &(&v_next * Scale(T::copy_impl(&y_k[(j + 1, 0)])));
+        // Accumulate into the solution vector using fused AXPY operation: x_k <- x_k + y_{j+1} * v_{j+1}
+        let coeff = T::copy_impl(&y_k[(j + 1, 0)]);
+        zip!(x_k.as_mut(), work.as_ref()).for_each(|unzip!(x_i, v_i)| {
+            *x_i = add(x_i, &mul(&coeff, v_i));
+        });
 
         // Update vectors for the next iteration
         v_prev = v_curr;
-        v_curr = v_next;
+        v_curr = work;
     }
 
     Ok(x_k)
@@ -554,7 +567,7 @@ mod tests {
         let last_step = last_step.unwrap();
 
         let v_k = result_k.v_k;
-        let v_k_plus_1 = last_step.v_next;
+        let v_k_plus_1 = iter.v_curr.clone(); // Get the current vector from iterator state
         let beta_k = last_step.beta;
 
         let t_k_mat = {
