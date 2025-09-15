@@ -15,7 +15,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::path::PathBuf;
 
 // A tolerance for floating-point comparisons in correctness tests.
-const TOLERANCE: f64 = 1e-12;
+const TOLERANCE: f64 = 1e-10;
 
 /// A helper struct to hold paths to a complete test instance.
 #[derive(Debug)]

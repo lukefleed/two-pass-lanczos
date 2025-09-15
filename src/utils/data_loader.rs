@@ -36,6 +36,11 @@ pub enum DataLoaderError {
     /// Occurs if the sparse matrix construction fails internally.
     #[error("Internal error: Failed to construct the sparse matrix from triplets.")]
     SparseMatrixConstructionError,
+    /// Occurs if a node index in a DIMACS file is not a positive integer.
+    #[error(
+        "Format error: Invalid node index '{0}'. DIMACS format requires 1-based positive integers."
+    )]
+    InvalidDimacsNodeIndex(String),
 }
 
 /// A struct containing the fully assembled KKT system and its metadata.
@@ -98,15 +103,21 @@ fn parse_dmx(
             }
             "a" => {
                 // An arc line defines a column in the incidence matrix E.
-                // Node indices in DIMACS are 1-based, so we convert them to 0-based.
-                let u: usize = parts[1]
-                    .parse::<usize>()
-                    .map_err(|_| DataLoaderError::ParseInt(parts[1].to_string()))?
-                    - 1;
-                let v: usize = parts[2]
-                    .parse::<usize>()
-                    .map_err(|_| DataLoaderError::ParseInt(parts[2].to_string()))?
-                    - 1;
+                // Node indices in DIMACS are 1-based. We parse and convert them to 0-based,
+                // validating that the indices are positive, as 0 is not a valid 1-based index.
+                let parse_and_validate = |s: &str| {
+                    let val = s
+                        .parse::<usize>()
+                        .map_err(|_| DataLoaderError::ParseInt(s.to_string()))?;
+                    if val > 0 {
+                        Ok(val - 1)
+                    } else {
+                        Err(DataLoaderError::InvalidDimacsNodeIndex(s.to_string()))
+                    }
+                };
+
+                let u: usize = parse_and_validate(parts[1])?;
+                let v: usize = parse_and_validate(parts[2])?;
 
                 // For the j-th arc (column), set +1 for the outgoing node u (row u)
                 // and -1 for the incoming node v (row v).
