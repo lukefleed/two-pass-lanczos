@@ -5,6 +5,7 @@ edition = "2024"
 
 # Regular dependencies required to build and use the library.
 [dependencies]
+anyhow = "1.0.99"
 env_logger = "0.11.8"
 faer = "0.22.6"
 log = "0.4.28"
@@ -18,7 +19,11 @@ criterion = "0.7.0"
 # Configuration for benchmarks using Criterion.
 # We disable the default benchmark harness to use Criterion's custom one.
 [[bench]]
-name = "performance"
+name = "scalability"
+harness = false
+
+[[bench]]
+name = "tradeoff"
 harness = false
 
 [profile.dev.package.faer]

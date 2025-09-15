@@ -18,6 +18,7 @@ pub struct LanczosError(#[from] LanczosErrorKind);
 /// Private enum containing the distinct kinds of errors.
 /// This separation allows for a clean `Display` implementation via [`thiserror`]
 /// while handling non-standard error types manually.
+#[allow(dead_code)]
 #[derive(Error, Debug, PartialEq)]
 pub(crate) enum LanczosErrorKind {
     /// Occurs when the Lanczos iteration terminates prematurely because the beta
