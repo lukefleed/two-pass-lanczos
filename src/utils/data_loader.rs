@@ -33,12 +33,19 @@ pub enum DataLoaderError {
     /// Occurs if the number of arcs in the .dmx and .qfc files do not match.
     #[error("Dimension mismatch: qfc file specifies {qfc_arcs} arcs, but dmx file has {dmx_arcs}.")]
     ArcCountMismatch { qfc_arcs: usize, dmx_arcs: usize },
+    /// Occurs if the sparse matrix construction fails internally.
+    #[error("Internal error: Failed to construct the sparse matrix from triplets.")]
+    SparseMatrixConstructionError,
 }
 
 /// A struct containing the fully assembled KKT system and its metadata.
+///
+/// # Implementation Notes
+///
+/// We use `usize` for the matrix indices (`I` in `SparseColMat<I, T>`),
+/// as it aligns with Rust's memory addressing and is efficient for this use case.
 pub struct KKTSystem {
     /// The complete KKT matrix A = [[D, E^T], [E, 0]], stored in a sparse column format.
-    /// We use usize for indices as it's the native integer size for memory addressing.
     pub a: SparseColMat<usize, f64>,
     /// The number of nodes (p) in the network graph.
     pub num_nodes: usize,
@@ -123,9 +130,17 @@ fn parse_dmx(
         return Err(DataLoaderError::ProblemLineMissing);
     }
 
+    // In debug builds, validate that the number of arcs found matches the declaration.
+    // This is a zero-cost abstraction in release builds.
+    debug_assert_eq!(
+        arc_counter, num_arcs,
+        "The number of parsed arcs does not match the count in the problem line."
+    );
+
     // `try_new_from_triplets` is the most efficient way to build the sparse matrix.
+    // We handle the potential error instead of panicking.
     let e_matrix = SparseColMat::try_new_from_triplets(num_nodes, num_arcs, &triplets)
-        .expect("Internal error: Failed to create sparse matrix from triplets.");
+        .map_err(|_| DataLoaderError::SparseMatrixConstructionError)?;
 
     Ok((num_nodes, num_arcs, e_matrix))
 }
@@ -198,7 +213,7 @@ pub fn load_kkt_system(
     let mut triplets: Vec<Triplet<usize, usize, f64>> = Vec::new();
 
     // Add block D (top-left, size m x m).
-    for (i, cost) in quadratic_costs.iter().enumerate().take(num_arcs) {
+    for (i, cost) in quadratic_costs.iter().enumerate() {
         triplets.push(Triplet {
             row: i,
             col: i,
@@ -206,18 +221,15 @@ pub fn load_kkt_system(
         });
     }
 
-    // Add block E (bottom-left, size p x m) by shifting row indices.
-    // We iterate over the non-zero elements of E.
+    // Add blocks E (bottom-left) and E^T (top-right) in a single pass.
     for triplet in e_matrix.triplet_iter() {
+        // Add entry for E (size p x m), shifting rows by num_arcs.
         triplets.push(Triplet {
             row: triplet.row + num_arcs,
             col: triplet.col,
             val: *triplet.val,
         });
-    }
-
-    // Add block E^T (top-right, size m x p) by swapping and shifting indices.
-    for triplet in e_matrix.triplet_iter() {
+        // Add entry for E^T (size m x p), swapping row/col and shifting the new column.
         triplets.push(Triplet {
             row: triplet.col,
             col: triplet.row + num_arcs,
@@ -226,8 +238,8 @@ pub fn load_kkt_system(
     }
 
     // Construct the final sparse matrix from the combined list of triplets.
-    let a_matrix =
-        SparseColMat::try_new_from_triplets(n, n, &triplets).expect("Failed to build KKT matrix.");
+    let a_matrix = SparseColMat::try_new_from_triplets(n, n, &triplets)
+        .map_err(|_| DataLoaderError::SparseMatrixConstructionError)?;
 
     Ok(KKTSystem {
         a: a_matrix,
