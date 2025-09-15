@@ -1,3 +1,5 @@
 /target
 .github/instructions/rust-dev.instructions.md
 .github/instructions/project.instructions.md
+faer.xml
+.github/instructions/faer.instructions.md
