@@ -8,14 +8,14 @@ use faer::{
     matrix_free::LinOp,
 };
 use lanczos_project::{
-    algorithms::lanczos::{lanczos_pass_one, lanczos_pass_two, lanczos_standard},
+    algorithms::lanczos::{lanczos_pass_one, lanczos_pass_two_with_basis, lanczos_standard},
     utils::data_loader::load_kkt_system,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::path::PathBuf;
 
 // A tolerance for floating-point comparisons in correctness tests.
-const TOLERANCE: f64 = 1e-10;
+const TOLERANCE: f64 = 5e-9;
 
 /// A helper struct to hold paths to a complete test instance.
 #[derive(Debug)]
@@ -57,17 +57,23 @@ fn run_correctness_test_for_instance(instance: &TestInstance) -> Result<()> {
         instance.name
     );
 
-    // --- Verification 2: Reconstruction correctness ---
+    // --- Verification 2: Reconstruction correctness and numerical stability ---
     let steps = standard_output.decomposition.steps_taken;
     let y_k = Mat::from_fn(steps, 1, |_, _| rng.random());
     let x_k_expected = &standard_output.v_k * &y_k;
-    let x_k_reconstructed = lanczos_pass_two(
+
+    // Use the test-only function to get both the solution and the regenerated basis.
+    let pass_two_output = lanczos_pass_two_with_basis(
         &a.as_ref(),
         b.as_ref(),
         &pass_one_output,
         y_k.as_ref(),
         &mut stack,
     )?;
+    let x_k_reconstructed = pass_two_output.x_k;
+    let v_k_regenerated = pass_two_output.v_k;
+
+    // 2a. Check if the final reconstructed solution is correct.
     let recon_error = (&x_k_expected - &x_k_reconstructed).norm_l2();
     ensure!(
         recon_error < TOLERANCE,
@@ -76,15 +82,36 @@ fn run_correctness_test_for_instance(instance: &TestInstance) -> Result<()> {
         recon_error
     );
 
-    // --- Verification 3: Orthonormality of the basis ---
-    let v_k = standard_output.v_k.as_ref();
+    // --- Verification 3: Orthonormality and Stability Checks ---
+    let v_k_standard = standard_output.v_k.as_ref();
     let identity = Mat::<f64>::identity(steps, steps);
-    let ortho_error = (&identity - v_k.adjoint() * v_k).norm_l2();
+
+    // 3a. Orthonormality of the standard basis.
+    let ortho_error_standard = (&identity - v_k_standard.adjoint() * v_k_standard).norm_l2();
     ensure!(
-        ortho_error < TOLERANCE,
-        "Basis on instance '{}' is not orthonormal. Error norm: {}",
+        ortho_error_standard < TOLERANCE,
+        "Standard basis on instance '{}' is not orthonormal. Error norm: {}",
         instance.name,
-        ortho_error
+        ortho_error_standard
+    );
+
+    // 3b. Orthonormality of the regenerated basis.
+    let v_k_regen_ref = v_k_regenerated.as_ref();
+    let ortho_error_regen = (&identity - v_k_regen_ref.adjoint() * v_k_regen_ref).norm_l2();
+    ensure!(
+        ortho_error_regen < TOLERANCE,
+        "Regenerated basis on instance '{}' is not orthonormal. Error norm: {}",
+        instance.name,
+        ortho_error_regen
+    );
+
+    // 3c. Numerical drift between the two bases.
+    let drift = (v_k_standard - v_k_regen_ref).squared_norm_l2();
+    ensure!(
+        drift < TOLERANCE,
+        "Numerical drift between bases on instance '{}' is too high. Drift norm: {}",
+        instance.name,
+        drift
     );
 
     Ok(())

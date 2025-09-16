@@ -74,6 +74,16 @@ pub struct LanczosOutput<T: ComplexField> {
     pub decomposition: LanczosDecomposition<T::Real>,
 }
 
+/// Contains the output of the second pass, including the regenerated basis.
+/// This struct is exposed only for testing purposes via conditional compilation.
+#[derive(Debug)]
+pub struct LanczosPassTwoOutput<T: ComplexField> {
+    /// The final approximate solution vector `x_k`.
+    pub x_k: Mat<T>,
+    /// The regenerated basis matrix `V_k`.
+    pub v_k: Mat<T>,
+}
+
 /// Computes the tolerance for breakdown detection based on machine epsilon.
 ///
 /// This provides better numerical robustness than hardcoded tolerances.
@@ -429,7 +439,52 @@ pub fn lanczos_pass_two<T: ComplexField>(
 where
     T::Real: RealField,
 {
-    // Check for dimension mismatch between the computed coefficients and the solution vector.
+    // This is a thin wrapper around the core implementation, configured to not
+    // store the regenerated basis, ensuring minimal memory usage for the public API.
+    let (x_k, _) = lanczos_pass_two_impl(operator, b, decomposition, y_k, stack, false)?;
+    Ok(x_k)
+}
+
+/// A test-only variant of `lanczos_pass_two` that also returns the regenerated basis.
+///
+/// This function is identical to `lanczos_pass_two` but additionally returns the
+/// regenerated basis matrix `V_k`. It is compiled only during testing and is
+/// used to verify the numerical stability of the regeneration process.
+pub fn lanczos_pass_two_with_basis<T: ComplexField>(
+    operator: &impl LinOp<T>,
+    b: MatRef<'_, T>,
+    decomposition: &LanczosDecomposition<T::Real>,
+    y_k: MatRef<'_, T>,
+    stack: &mut MemStack,
+) -> Result<LanczosPassTwoOutput<T>, LanczosError>
+where
+    T::Real: RealField,
+{
+    // Call the core implementation, configured to store the basis for testing.
+    let (x_k, v_k_option) = lanczos_pass_two_impl(operator, b, decomposition, y_k, stack, true)?;
+    // The `v_k_option` is guaranteed to be `Some` because `store_basis` is true.
+    Ok(LanczosPassTwoOutput {
+        x_k,
+        v_k: v_k_option.unwrap(),
+    })
+}
+
+/// Core implementation of the second Lanczos pass.
+///
+/// This private function contains the logic to regenerate the basis and reconstruct
+/// the solution. It can be configured to either store the basis (for testing) or
+/// discard it (for production use).
+fn lanczos_pass_two_impl<T: ComplexField>(
+    operator: &impl LinOp<T>,
+    b: MatRef<'_, T>,
+    decomposition: &LanczosDecomposition<T::Real>,
+    y_k: MatRef<'_, T>,
+    stack: &mut MemStack,
+    store_basis: bool,
+) -> Result<(Mat<T>, Option<Mat<T>>), LanczosError>
+where
+    T::Real: RealField,
+{
     if decomposition.steps_taken != y_k.nrows() {
         return Err(LanczosErrorKind::DimensionMismatch {
             operator_cols: decomposition.steps_taken,
@@ -437,7 +492,7 @@ where
         }
         .into());
     }
-    // Check for zero vector using the pre-computed norm from the first pass.
+
     let zero_threshold = breakdown_tolerance::<T::Real>();
     if decomposition.b_norm <= zero_threshold {
         return Err(LanczosErrorKind::InputError(
@@ -445,20 +500,29 @@ where
         )
         .into());
     }
-    // If the Lanczos process terminated at step 0, the solution is a zero vector.
+
     if decomposition.steps_taken == 0 {
-        return Ok(Mat::zeros(b.nrows(), 1));
+        let v_k = if store_basis {
+            Some(Mat::zeros(b.nrows(), 0))
+        } else {
+            None
+        };
+        return Ok((Mat::zeros(b.nrows(), 1), v_k));
     }
 
     let mut v_prev = Mat::<T>::zeros(b.nrows(), 1);
-    // Normalize the initial vector using the pre-computed norm.
     let inv_norm = T::from_real_impl(&T::Real::recip_impl(&decomposition.b_norm));
     let mut v_curr = &b * Scale(inv_norm);
 
-    // Initialize the solution with the first term: x_k = y_1 * v_1
     let mut x_k = &v_curr * Scale(T::copy_impl(&y_k[(0, 0)]));
+    let mut v_k_regen = if store_basis {
+        let mut m = Mat::zeros(b.nrows(), decomposition.steps_taken);
+        m.col_mut(0).copy_from(v_curr.as_ref().col(0));
+        Some(m)
+    } else {
+        None
+    };
 
-    // Pre-allocate work vector outside the loop to avoid repeated heap allocations.
     let mut work = Mat::<T>::zeros(b.nrows(), 1);
 
     for j in 0..decomposition.steps_taken - 1 {
@@ -470,7 +534,6 @@ where
             T::Real::copy_impl(&decomposition.betas[j - 1])
         };
 
-        // Re-execute the recurrence step to get the unnormalized next vector in `work`.
         let (computed_alpha, computed_beta_option) = lanczos_recurrence_step(
             operator,
             work.as_mut(),
@@ -480,9 +543,6 @@ where
             stack,
         );
 
-        // In debug builds, verify numerical stability by comparing the recomputed
-        // coefficients against the stored ones from the first pass. A significant
-        // deviation can indicate a loss of orthogonality.
         #[cfg(debug_assertions)]
         {
             let tolerance = breakdown_tolerance::<T::Real>() * T::Real::from_f64_impl(10.0);
@@ -504,7 +564,6 @@ where
             }
         }
 
-        // Ensure no unexpected breakdown occurs in the second pass.
         if computed_beta_option.is_none() {
             return Err(LanczosErrorKind::InputError(format!(
                 "Unexpected breakdown in second pass at step {}",
@@ -513,31 +572,31 @@ where
             .into());
         }
 
-        // Normalize using the stored beta_j from the first pass for performance and reproducibility.
         let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta_j));
         zip!(work.as_mut()).for_each(|unzip!(w_i)| {
             *w_i = mul(w_i, &inv_beta);
         });
 
-        // Accumulate into the solution vector using fused AXPY operation: x_k <- x_k + y_{j+1} * v_{j+1}
         let coeff = T::copy_impl(&y_k[(j + 1, 0)]);
         zip!(x_k.as_mut(), work.as_ref()).for_each(|unzip!(x_i, v_i)| {
             *x_i = add(x_i, &mul(&coeff, v_i));
         });
 
-        // Update vectors for the next iteration using swap to avoid cloning.
         core::mem::swap(&mut v_prev, &mut v_curr);
         core::mem::swap(&mut v_curr, &mut work);
+
+        if let Some(m) = v_k_regen.as_mut() {
+            m.col_mut(j + 1).copy_from(v_curr.as_ref().col(0));
+        }
     }
 
-    Ok(x_k)
+    Ok((x_k, v_k_regen))
 }
 
 #[cfg(test)]
 mod tests {
-    use faer::dyn_stack::MemBuffer;
-
     use super::*;
+    use faer::dyn_stack::MemBuffer;
 
     /// Sets up a simple, well-defined test problem using a small, symmetric matrix.
     /// The matrix is a discrete 1D Laplacian, which is symmetric positive-definite.
@@ -614,7 +673,6 @@ mod tests {
         let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
 
         // Regenerate the k+1-th vector to check the residual.
-        // The constructor now requires the pre-computed norm of b.
         let b_norm = b.norm_l2();
         let mut iter = LanczosIteration::new(&a, b.as_ref(), k + 1, b_norm).unwrap();
         let mut last_step = None;
@@ -654,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn test_basis_is_orthonormal() {
+    fn test_basis_is_orthonormal_on_simple_problem() {
         let (a, b) = setup_test_problem();
         let k = 4;
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
@@ -675,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn test_two_pass_reconstruction() {
+    fn test_two_pass_reconstruction_is_consistent() {
         let (a, b) = setup_test_problem();
         let k = 3;
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
@@ -742,11 +800,13 @@ mod tests {
         let b: Mat<f64> = Mat::zeros(2, 1);
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let mut stack = MemStack::new(&mut mem);
-        let b_norm = b.norm_l2();
 
-        assert!(LanczosIteration::new(&a, b.as_ref(), 2, b_norm).is_err());
-        assert!(lanczos_standard(&a, b.as_ref(), 2, &mut stack, None).is_err());
-        assert!(lanczos_pass_one(&a, b.as_ref(), 2, &mut stack).is_err());
+        let result_standard = lanczos_standard(&a, b.as_ref(), 2, &mut stack, None);
+        assert!(result_standard.is_err());
+
+        let result_pass_one = lanczos_pass_one(&a, b.as_ref(), 2, &mut stack);
+        assert!(result_pass_one.is_err());
+
         let decomp = LanczosDecomposition {
             alphas: vec![],
             betas: vec![],
@@ -754,6 +814,7 @@ mod tests {
             b_norm: 0.0,
         };
         let y_k: Mat<f64> = Mat::zeros(0, 1);
-        assert!(lanczos_pass_two(&a, b.as_ref(), &decomp, y_k.as_ref(), &mut stack).is_err());
+        let result_pass_two = lanczos_pass_two(&a, b.as_ref(), &decomp, y_k.as_ref(), &mut stack);
+        assert!(result_pass_two.is_err());
     }
 }

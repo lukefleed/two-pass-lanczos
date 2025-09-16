@@ -36,7 +36,7 @@ pub enum DataLoaderError {
     /// Occurs if the sparse matrix construction fails internally.
     #[error("Internal error: Failed to construct the sparse matrix from triplets.")]
     SparseMatrixConstructionError,
-    /// Occurs if a node index in a DIMACS file is not a positive integer.
+    /// Occurs if a node index in a DIMACS file is invalid (e.g., 0 in a 1-based format).
     #[error(
         "Format error: Invalid node index '{0}'. DIMACS format requires 1-based positive integers."
     )]
@@ -103,12 +103,12 @@ fn parse_dmx(
             }
             "a" => {
                 // An arc line defines a column in the incidence matrix E.
-                // Node indices in DIMACS are 1-based. We parse and convert them to 0-based,
-                // validating that the indices are positive, as 0 is not a valid 1-based index.
-                let parse_and_validate = |s: &str| {
+                // DIMACS format is 1-based. We parse, validate, and convert to 0-based.
+                let parse_and_convert = |s: &str| {
                     let val = s
                         .parse::<usize>()
                         .map_err(|_| DataLoaderError::ParseInt(s.to_string()))?;
+                    // A 1-based index must be positive. An index of 0 is invalid.
                     if val > 0 {
                         Ok(val - 1)
                     } else {
@@ -116,8 +116,8 @@ fn parse_dmx(
                     }
                 };
 
-                let u: usize = parse_and_validate(parts[1])?;
-                let v: usize = parse_and_validate(parts[2])?;
+                let u: usize = parse_and_convert(parts[1])?;
+                let v: usize = parse_and_convert(parts[2])?;
 
                 // For the j-th arc (column), set +1 for the outgoing node u (row u)
                 // and -1 for the incoming node v (row v).
