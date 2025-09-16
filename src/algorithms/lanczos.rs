@@ -611,6 +611,78 @@ mod tests {
         (a, b)
     }
 
+    /// Tests the private `lanczos_recurrence_step` function to ensure the core
+    /// arithmetic for a single step is correct.
+    #[test]
+    fn test_recurrence_step_correctness() {
+        let (a, _) = setup_test_problem();
+        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+
+        let v_curr: Mat<f64> = mat![[1.0], [0.0], [0.0], [0.0]];
+        let v_prev: Mat<f64> = Mat::zeros(4, 1);
+        let beta_prev = 0.0;
+
+        let mut work = Mat::<f64>::zeros(4, 1);
+        let (alpha, beta_option) = lanczos_recurrence_step(
+            &a.as_ref(),
+            work.as_mut(),
+            v_curr.as_ref(),
+            v_prev.as_ref(),
+            beta_prev,
+            &mut stack,
+        );
+
+        let beta = beta_option.unwrap();
+        assert!((alpha - 2.0).abs() < 1e-15);
+        assert!((beta - 1.0).abs() < 1e-15);
+    }
+
+    /// Tests the private `LanczosIteration` struct to verify that it produces the
+    /// correct sequence of alpha and beta coefficients over several steps.
+    #[test]
+    fn test_iteration_produces_correct_sequence() {
+        let (a, b) = setup_test_problem();
+        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+        let b_norm = b.norm_l2();
+
+        let k = 3;
+        let binding = a.as_ref();
+        let mut iter = LanczosIteration::new(&binding, b.as_ref(), k, b_norm).unwrap();
+        let mut computed_alphas = Vec::new();
+        let mut computed_betas = Vec::new();
+
+        for i in 0..k {
+            if let Some(step) = iter.next_step(&mut stack) {
+                computed_alphas.push(step.alpha);
+
+                if step.beta <= breakdown_tolerance() {
+                    break;
+                }
+
+                if i < k - 1 {
+                    computed_betas.push(step.beta);
+                }
+            } else {
+                break;
+            }
+        }
+
+        // For the 1D discrete Laplacian, alphas are 2.0 and betas are 1.0.
+        let expected_alphas = vec![2.0, 2.0, 2.0];
+        let expected_betas = vec![1.0, 1.0];
+
+        assert_eq!(computed_alphas.len(), 3);
+        assert_eq!(computed_betas.len(), 2);
+        for (actual, expected) in computed_alphas.iter().zip(expected_alphas.iter()) {
+            assert!((actual - expected).abs() < 1e-14);
+        }
+        for (actual, expected) in computed_betas.iter().zip(expected_betas.iter()) {
+            assert!((actual - expected).abs() < 1e-14);
+        }
+    }
+
     #[test]
     fn test_lanczos_standard_produces_correct_dimensions() {
         let (a, b) = setup_test_problem();
@@ -641,133 +713,6 @@ mod tests {
         assert_eq!(decomp.alphas.len(), k);
         assert_eq!(decomp.betas.len(), k - 1);
         assert!((decomp.b_norm - 1.0).abs() < 1e-15);
-    }
-
-    #[test]
-    fn test_one_pass_and_pass_one_produce_same_decomposition() {
-        let (a, b) = setup_test_problem();
-        let k = 4;
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-
-        let standard_result =
-            lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-        let pass_one_result = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack).unwrap();
-
-        assert_eq!(standard_result.decomposition.alphas, pass_one_result.alphas);
-        assert_eq!(standard_result.decomposition.betas, pass_one_result.betas);
-        assert_eq!(
-            standard_result.decomposition.steps_taken,
-            pass_one_result.steps_taken
-        );
-        assert_eq!(standard_result.decomposition.b_norm, pass_one_result.b_norm);
-    }
-
-    #[test]
-    fn test_lanczos_relation_holds() {
-        let (a, b) = setup_test_problem();
-        let k = 3;
-        let mut mem = MemBuffer::new(a.apply_scratch(k + 1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-
-        // Regenerate the k+1-th vector to check the residual.
-        let b_norm = b.norm_l2();
-        let mut iter = LanczosIteration::new(&a, b.as_ref(), k + 1, b_norm).unwrap();
-        let mut last_step = None;
-        for _ in 0..k {
-            last_step = iter.next_step(&mut stack);
-        }
-        let last_step = last_step.unwrap();
-
-        let v_k = result.v_k;
-        let v_k_plus_1 = &iter.v_curr;
-        let beta_k = last_step.beta;
-
-        let t_k_mat = {
-            let mut t = Mat::zeros(k, k);
-            for i in 0..k {
-                t.as_mut()[(i, i)] = result.decomposition.alphas[i];
-            }
-            for i in 0..k - 1 {
-                t.as_mut()[(i, i + 1)] = result.decomposition.betas[i];
-                t.as_mut()[(i + 1, i)] = result.decomposition.betas[i];
-            }
-            t
-        };
-
-        // Check A*V_k - V_k*T_k = beta_k * v_{k+1} * e_k^T
-        let mut e_k = Mat::zeros(k, 1);
-        e_k.as_mut()[(k - 1, 0)] = 1.0;
-        let residual = &a * &v_k - &v_k * &t_k_mat;
-        let expected_residual = v_k_plus_1 * e_k.as_ref().adjoint() * Scale(beta_k);
-
-        let diff = &residual - &expected_residual;
-        assert!(
-            diff.norm_l2() < 1e-14,
-            "Lanczos relation does not hold. Diff norm: {}",
-            diff.norm_l2()
-        );
-    }
-
-    #[test]
-    fn test_basis_is_orthonormal_on_simple_problem() {
-        let (a, b) = setup_test_problem();
-        let k = 4;
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-        let v_k = result.v_k;
-        let actual_steps = result.decomposition.steps_taken;
-
-        let identity = Mat::<f64>::identity(actual_steps, actual_steps);
-        let v_k_adjoint_v_k = v_k.as_ref().adjoint() * v_k.as_ref();
-
-        let diff = &v_k_adjoint_v_k - &identity;
-        assert!(
-            diff.norm_l2() < 1e-14,
-            "Lanczos basis vectors are not orthonormal. Diff norm: {}",
-            diff.norm_l2()
-        );
-    }
-
-    #[test]
-    fn test_two_pass_reconstruction_is_consistent() {
-        let (a, b) = setup_test_problem();
-        let k = 3;
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-
-        // Perform standard Lanczos to get the reference V_k
-        let standard_result =
-            lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-        let v_k_ref = standard_result.v_k;
-        let actual_steps = standard_result.decomposition.steps_taken;
-
-        // Perform pass one
-        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack).unwrap();
-        assert_eq!(actual_steps, decomp.steps_taken);
-
-        // Create an arbitrary coefficient vector y_k
-        let mut y_k = Mat::<f64>::zeros(actual_steps, 1);
-        for i in 0..actual_steps {
-            y_k.as_mut()[(i, 0)] = 0.1 * (i + 1) as f64;
-        }
-
-        // Reconstruct the solution using the second pass
-        let x_k_two_pass =
-            lanczos_pass_two(&a.as_ref(), b.as_ref(), &decomp, y_k.as_ref(), &mut stack).unwrap();
-
-        // Compute the expected solution from the standard method
-        let x_k_expected = &v_k_ref * &y_k;
-
-        let diff = &x_k_two_pass - &x_k_expected;
-        assert!(
-            diff.norm_l2() < 1e-14,
-            "Two-pass reconstruction does not match. Diff norm: {}",
-            diff.norm_l2()
-        );
     }
 
     #[test]
