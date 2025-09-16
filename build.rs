@@ -1,5 +1,3 @@
-// build.rs
-
 use glob::glob;
 use std::env;
 use std::fs::File;
@@ -15,7 +13,6 @@ struct TestInstance {
 }
 
 /// Discovers all test instances by scanning the `data/` directory.
-/// This logic is replicated from the original test file.
 fn get_all_instances() -> Vec<TestInstance> {
     let data_dirs = ["data/1000", "data/2000", "data/3000"];
     data_dirs
@@ -44,41 +41,70 @@ fn get_all_instances() -> Vec<TestInstance> {
 }
 
 fn main() {
-    // Get the Cargo output directory where we will place the generated code.
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=data/");
+
     let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("correctness_tests.rs");
+    let dest_path = Path::new(&out_dir).join("properties_tests.rs");
     let mut file = BufWriter::new(File::create(&dest_path).unwrap());
 
-    // Discover all test instances.
     let instances = get_all_instances();
 
-    // Generate a separate `#[test]` function for each instance.
     for instance in instances {
-        let test_fn_name = format!("correctness_test_{}", instance.name);
+        let test_fn_name_base = &instance.name;
         let dmx_path_str = instance.dmx_path.to_str().unwrap();
         let qfc_path_str = instance.qfc_path.to_str().unwrap();
 
-        // Write the test function code to the output file.
-        writeln!(
-            file,
-            r#"
+        let test_template = |test_type: &str, runner_fn: &str| {
+            format!(
+                r#"
 #[test]
-fn {fn_name}() -> anyhow::Result<()> {{
-    // Re-create the TestInstance struct for this specific test.
+fn {test_type}_{fn_name_base}() -> anyhow::Result<()> {{
     let instance = TestInstance {{
         name: "{name}".to_string(),
         dmx_path: "{dmx_path}".into(),
         qfc_path: "{qfc_path}".into(),
     }};
-    // Call the main test runner function. A failure will be propagated
-    // via the `Result` and cause the test to fail.
-    run_correctness_test_for_instance(&instance)
+    {runner_fn}(&instance)
 }}
 "#,
-            fn_name = test_fn_name,
-            name = instance.name,
-            dmx_path = dmx_path_str.escape_default(),
-            qfc_path = qfc_path_str.escape_default()
+                test_type = test_type,
+                fn_name_base = test_fn_name_base,
+                name = instance.name,
+                dmx_path = dmx_path_str.escape_default(),
+                qfc_path = qfc_path_str.escape_default(),
+                runner_fn = runner_fn
+            )
+        };
+
+        writeln!(
+            file,
+            "{}",
+            test_template(
+                "decomposition_consistency",
+                "run_decomposition_consistency_test_for_instance"
+            )
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            test_template("lanczos_relation", "run_lanczos_relation_test_for_instance")
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            test_template("orthonormality", "run_orthonormality_test_for_instance")
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            test_template(
+                "reconstruction_stability",
+                "run_reconstruction_stability_test_for_instance"
+            )
         )
         .unwrap();
     }
