@@ -14,12 +14,7 @@ use lanczos_project::algorithms::lanczos::{lanczos_pass_two, lanczos_standard};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // A tolerance for the relative error against the ground truth.
-// This is higher than the property test tolerance because it accounts for
-// approximation errors inherent to the Krylov method for a fixed number of
-// iterations, not just floating-point drift. A value of k=30 for an n=100
-// problem is not expected to yield results accurate to machine precision
-// for non-polynomial functions.
-const TOLERANCE: f64 = 1e-3;
+const TOLERANCE: f64 = 1e-12;
 
 /// Creates a test problem with a diagonal sparse matrix, for which f(A) is
 /// easily computed, and a random vector b.
@@ -49,7 +44,7 @@ fn create_diagonal_problem(n: usize) -> (SparseColMat<usize, f64>, Mat<f64>, Vec
 #[test]
 fn test_linear_system_solve() -> Result<()> {
     let n = 100;
-    let k = 30; // Number of Lanczos iterations.
+    let k = 100; // Number of Lanczos iterations.
     let (a, b, eigs) = create_diagonal_problem(n);
 
     // Compute ground truth: x_true = A^-1 * b
@@ -110,7 +105,7 @@ fn test_linear_system_solve() -> Result<()> {
 #[test]
 fn test_matrix_exponential() -> Result<()> {
     let n = 100;
-    let k = 30;
+    let k = 100;
     let (a, b, eigs) = create_diagonal_problem(n);
     let f = |z: f64| z.exp();
 
@@ -176,7 +171,7 @@ fn test_matrix_exponential() -> Result<()> {
 #[test]
 fn test_matrix_square() -> Result<()> {
     let n = 100;
-    let k = 30;
+    let k = 100;
     let (a, b, eigs) = create_diagonal_problem(n);
     let f = |z: f64| z.powi(2);
 
