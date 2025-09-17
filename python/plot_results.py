@@ -70,7 +70,7 @@ def create_plots(input_csv_path: str, output_prefix: str):
     ax_mem.grid(True, which='both', linestyle='--', linewidth=0.5)
 
     # Ensure the y-axis starts at zero for better comparison.
-    ax_mem.set_ylim(bottom=0)
+    # ax_mem.set_ylim(bottom=0)
 
     memory_plot_path = f"{output_prefix}_memory.pdf"
     fig_mem.savefig(memory_plot_path, bbox_inches='tight')
