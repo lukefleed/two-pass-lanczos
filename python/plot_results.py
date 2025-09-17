@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Generates plots for the Lanczos memory-computation trade-off experiment.
 
