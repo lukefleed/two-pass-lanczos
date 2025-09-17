@@ -1,0 +1,61 @@
+# bash script
+
+# n = 2^8 nodes
+
+for i in 8 16 32
+do
+for j in {1..5}
+do
+
+./src/netgen  < ./param/net8_${i}_${j}.par > ./dmx/net8_${i}_${j}.dmx
+
+done
+done
+
+# n = 2^10 nodes
+
+for i in 8 32 64
+do
+for j in {1..5}
+do
+
+./src/netgen  < ./param/net10_${i}_${j}.par > ./dmx/net10_${i}_${j}.dmx
+
+done
+done
+
+# n = 2^12 nodes
+
+for i in 8 64 256
+do
+for j in {1..5}
+do
+
+./src/netgen  < ./param/net12_${i}_${j}.par > ./dmx/net12_${i}_${j}.dmx
+
+done
+done
+
+# n = 2^14 nodes
+
+for i in 8 64
+do
+for j in {1..5}
+do
+
+./src/netgen  < ./param/net14_${i}_${j}.par > ./dmx/net14_${i}_${j}.dmx
+
+done
+done
+
+# n = 2^16 nodes
+
+for i in 8
+do
+for j in {1..5}
+do
+
+./src/netgen  < ./param/net16_${i}_${j}.par > ./dmx/net16_${i}_${j}.dmx
+
+done
+done
