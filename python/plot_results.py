@@ -33,6 +33,10 @@ def create_plots(input_csv_path: str, output_prefix: str):
         print(f"Error: Input file not found at '{input_csv_path}'")
         return
 
+    # Separate the dataframe into two based on the 'variant' column.
+    df_standard = df[df['variant'] == 'standard'].copy()
+    df_two_pass = df[df['variant'] == 'two-pass'].copy()
+
     # Set a professional plot style.
     plt.style.use('seaborn-v0_8-whitegrid')
 
@@ -41,8 +45,8 @@ def create_plots(input_csv_path: str, output_prefix: str):
 
     # Plot data for standard (one-pass) Lanczos.
     ax_mem.plot(
-        df["k"],
-        df["rss_standard_kb"] / 1024,  # Convert KB to MB for readability
+        df_standard["k"],
+        df_standard["rss_kb"] / 1024,  # Convert KB to MB for readability
         label="Standard Lanczos (One-Pass)",
         marker='o',
         linestyle='-',
@@ -50,8 +54,8 @@ def create_plots(input_csv_path: str, output_prefix: str):
     )
     # Plot data for two-pass Lanczos.
     ax_mem.plot(
-        df["k"],
-        df["rss_two_pass_kb"] / 1024,
+        df_two_pass["k"],
+        df_two_pass["rss_kb"] / 1024,
         label="Two-Pass Lanczos",
         marker='x',
         linestyle='--',
@@ -76,16 +80,16 @@ def create_plots(input_csv_path: str, output_prefix: str):
     fig_time, ax_time = plt.subplots(figsize=(8, 6))
 
     ax_time.plot(
-        df["k"],
-        df["time_standard_s"],
+        df_standard["k"],
+        df_standard["time_s"],
         label="Standard Lanczos (One-Pass)",
         marker='o',
         linestyle='-',
         color='C0'
     )
     ax_time.plot(
-        df["k"],
-        df["time_two_pass_s"],
+        df_two_pass["k"],
+        df_two_pass["time_s"],
         label="Two-Pass Lanczos",
         marker='x',
         linestyle='--',

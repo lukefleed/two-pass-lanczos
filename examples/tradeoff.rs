@@ -8,7 +8,7 @@ mod common;
 
 use crate::common::{CommonArgs, get_peak_rss_kb};
 use anyhow::{Context, Result, anyhow};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use faer::{
     dyn_stack::{MemBuffer, MemStack},
     matrix_free::LinOp,
@@ -23,15 +23,28 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// Defines the Lanczos algorithm variant to be run.
+#[derive(ValueEnum, Clone, Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum LanczosVariant {
+    /// The standard one-pass algorithm (O(nk) memory).
+    Standard,
+    /// The memory-efficient two-pass algorithm (O(n) memory).
+    TwoPass,
+}
+
 /// Command-line arguments specific to the trade-off experiment.
 #[derive(Parser, Debug)]
 #[clap(
     name = "tradeoff-runner",
-    about = "Runs the memory-computation trade-off experiment for the Lanczos methods."
+    about = "Runs a specified Lanczos method variant for the memory-computation trade-off experiment."
 )]
 struct TradeoffArgs {
     #[clap(flatten)]
     common: CommonArgs,
+    /// The Lanczos algorithm variant to execute.
+    #[clap(long, value_enum)]
+    variant: LanczosVariant,
     #[clap(long, default_value_t = 50)]
     k_start: usize,
     #[clap(long, default_value_t = 1000)]
@@ -43,11 +56,10 @@ struct TradeoffArgs {
 /// Represents a single row of the output CSV file.
 #[derive(Debug, Serialize)]
 struct TradeoffResult {
+    variant: LanczosVariant,
     k: usize,
-    time_standard_s: f64,
-    rss_standard_kb: u64,
-    time_two_pass_s: f64,
-    rss_two_pass_kb: u64,
+    time_s: f64,
+    rss_kb: u64,
 }
 
 /// Helper function to find the first file with a given extension in a directory.
@@ -71,7 +83,10 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow!("Failed to initialize logger: {}", e))?;
 
     let args = TradeoffArgs::parse();
-    log::info!("Starting trade-off experiment...");
+    log::info!(
+        "Starting trade-off experiment for variant: {:?}",
+        args.variant
+    );
     log::info!(
         "Parameters: k_start={}, k_end={}, k_step={}",
         args.k_start,
@@ -84,7 +99,6 @@ fn main() -> Result<()> {
         &args.common.instance_dir
     );
 
-    // --- Corrected File Loading Logic ---
     let dmx_path = find_file_by_extension(&args.common.instance_dir, "dmx")?;
     let qfc_path = find_file_by_extension(&args.common.instance_dir, "qfc")?;
     log::info!("Found instance files: {:?} and {:?}", dmx_path, qfc_path);
@@ -96,65 +110,81 @@ fn main() -> Result<()> {
     let x_true = Mat::<f64>::from_fn(n, 1, |_, _| 1.0 / (n as f64).sqrt());
     let b = a * &x_true;
 
-    let mut writer = csv::Writer::from_path(&args.common.output)?;
+    // Open the CSV writer in append mode if the file already exists,
+    // otherwise create it and write the header.
+    let output_exists = args.common.output.exists();
+    let output_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(output_exists)
+        .open(&args.common.output)?;
+
+    let mut writer = csv::WriterBuilder::new()
+        .has_headers(!output_exists)
+        .from_writer(output_file);
+
+    // A generic solver for the tridiagonal system f(T_k)e_1.
+    // This is shared by both Lanczos variants.
+    let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>> {
+        let steps = alphas.len();
+        if steps == 0 {
+            return Ok(Mat::zeros(0, 1));
+        }
+        let mut t_k = Mat::zeros(steps, steps);
+        for i in 0..steps {
+            t_k.as_mut()[(i, i)] = alphas[i];
+        }
+        for i in 0..steps - 1 {
+            t_k.as_mut()[(i, i + 1)] = betas[i];
+            t_k.as_mut()[(i + 1, i)] = betas[i];
+        }
+        let mut e1 = Mat::zeros(steps, 1);
+        e1.as_mut()[(0, 0)] = 1.0;
+        Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
+    };
+
+    let mut stack_mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
 
     for k in (args.k_start..=args.k_end).step_by(args.k_step) {
-        log::info!("Running for k = {}...", k);
+        log::info!("Running variant {:?} for k = {}...", &args.variant, k);
 
-        let mut stack_mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-
-        let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>> {
-            let steps = alphas.len();
-            if steps == 0 {
-                return Ok(Mat::zeros(0, 1));
+        let (time_s, rss_kb) = match args.variant {
+            LanczosVariant::Standard => {
+                let start_time = Instant::now();
+                let _ = lanczos(
+                    &a.as_ref(),
+                    b.as_ref(),
+                    k,
+                    &mut MemStack::new(&mut stack_mem),
+                    &f_tk_solver,
+                )?;
+                (start_time.elapsed().as_secs_f64(), get_peak_rss_kb())
             }
-            let mut t_k = Mat::zeros(steps, steps);
-            for i in 0..steps {
-                t_k.as_mut()[(i, i)] = alphas[i];
+            LanczosVariant::TwoPass => {
+                let start_time = Instant::now();
+                let _ = lanczos_two_pass(
+                    &a.as_ref(),
+                    b.as_ref(),
+                    k,
+                    &mut MemStack::new(&mut stack_mem),
+                    &f_tk_solver,
+                )?;
+                (start_time.elapsed().as_secs_f64(), get_peak_rss_kb())
             }
-            for i in 0..steps - 1 {
-                t_k.as_mut()[(i, i + 1)] = betas[i];
-                t_k.as_mut()[(i + 1, i)] = betas[i];
-            }
-            let mut e1 = Mat::zeros(steps, 1);
-            e1.as_mut()[(0, 0)] = 1.0;
-            Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
 
-        let start_std = Instant::now();
-        let _ = lanczos(
-            &a.as_ref(),
-            b.as_ref(),
-            k,
-            &mut MemStack::new(&mut stack_mem),
-            &f_tk_solver,
-        )?;
-        let time_standard_s = start_std.elapsed().as_secs_f64();
-        let rss_standard_kb = get_peak_rss_kb();
-
-        let start_2p = Instant::now();
-        let _ = lanczos_two_pass(
-            &a.as_ref(),
-            b.as_ref(),
-            k,
-            &mut MemStack::new(&mut stack_mem),
-            &f_tk_solver,
-        )?;
-        let time_two_pass_s = start_2p.elapsed().as_secs_f64();
-        let rss_two_pass_kb = get_peak_rss_kb();
-
         writer.serialize(TradeoffResult {
+            variant: args.variant.clone(),
             k,
-            time_standard_s,
-            rss_standard_kb,
-            time_two_pass_s,
-            rss_two_pass_kb,
+            time_s,
+            rss_kb,
         })?;
     }
 
     writer.flush()?;
     log::info!(
-        "Experiment complete. Results saved to {:?}",
+        "Experiment run for variant {:?} complete. Results saved to {:?}",
+        &args.variant,
         &args.common.output
     );
     Ok(())
