@@ -13,7 +13,7 @@ use thiserror::Error;
 ///
 #[derive(Error, Debug)]
 #[error(transparent)]
-pub struct LanczosError(#[from] LanczosErrorKind);
+pub struct LanczosError(#[from] pub(crate) LanczosErrorKind);
 
 /// Private enum containing the distinct kinds of errors.
 /// This separation allows for a clean `Display` implementation via [`thiserror`]
@@ -54,6 +54,10 @@ pub(crate) enum LanczosErrorKind {
     /// Wraps an error originating from [`faer`]'s eigendecomposition module.
     #[error("A numerical error occurred during the eigendecomposition of T_k: {0:?}")]
     EvdError(faer::linalg::evd::EvdError),
+
+    /// Wraps an error returned by the user-provided solver for `f(T_k)`.
+    #[error("The user-provided f(T_k) solver failed: {0}")]
+    SolverError(String),
 }
 
 // Manually implement PartialEq for the public error type.
@@ -114,6 +118,15 @@ mod tests {
         let error = LanczosError(LanczosErrorKind::EvdError(evd_error));
         let expected_message =
             "A numerical error occurred during the eigendecomposition of T_k: NoConvergence";
+        assert_eq!(error.to_string(), expected_message);
+    }
+
+    #[test]
+    fn test_solver_error_message() {
+        let error = LanczosError(LanczosErrorKind::SolverError(
+            "Custom solver failed".to_string(),
+        ));
+        let expected_message = "The user-provided f(T_k) solver failed: Custom solver failed";
         assert_eq!(error.to_string(), expected_message);
     }
 }

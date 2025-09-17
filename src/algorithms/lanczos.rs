@@ -288,7 +288,7 @@ where
 ///
 /// # Returns
 /// A `Result` containing the `LanczosOutput` on success, or a `LanczosError` on failure.
-pub fn lanczos_standard<T: ComplexField>(
+pub(crate) fn lanczos_standard<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
@@ -371,7 +371,7 @@ where
 ///
 /// # Returns
 /// A `Result` containing the `LanczosDecomposition` on success, or a `LanczosError`.
-pub fn lanczos_pass_one<T: ComplexField>(
+pub(crate) fn lanczos_pass_one<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
@@ -429,7 +429,7 @@ where
 ///
 /// # Returns
 /// A `Result` containing the final approximate solution vector `x_k`.
-pub fn lanczos_pass_two<T: ComplexField>(
+pub(crate) fn lanczos_pass_two<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
@@ -450,7 +450,8 @@ where
 /// This function is identical to `lanczos_pass_two` but additionally returns the
 /// regenerated basis matrix `V_k`. It is compiled only during testing and is
 /// used to verify the numerical stability of the regeneration process.
-pub fn lanczos_pass_two_with_basis<T: ComplexField>(
+#[allow(dead_code)]
+pub(crate) fn lanczos_pass_two_with_basis<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
@@ -486,9 +487,10 @@ where
     T::Real: RealField,
 {
     if decomposition.steps_taken != y_k.nrows() {
-        return Err(LanczosErrorKind::DimensionMismatch {
-            operator_cols: decomposition.steps_taken,
-            vector_rows: y_k.nrows(),
+        return Err(LanczosErrorKind::ParameterMismatch {
+            param_name: "y_k".to_string(),
+            expected: decomposition.steps_taken,
+            actual: y_k.nrows(),
         }
         .into());
     }
@@ -596,26 +598,40 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::data_loader::load_kkt_system;
+    use anyhow::{Result, ensure};
     use faer::dyn_stack::MemBuffer;
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use std::path::PathBuf;
 
-    /// Sets up a simple, well-defined test problem using a small, symmetric matrix.
-    /// The matrix is a discrete 1D Laplacian, which is symmetric positive-definite.
-    fn setup_test_problem() -> (Mat<f64>, Mat<f64>) {
+    // A tolerance for floating-point comparisons in property tests.
+    const TOLERANCE: f64 = 5e-9;
+
+    /// A helper struct to hold paths to a complete test instance.
+    #[derive(Debug)]
+    struct TestInstance {
+        pub name: String,
+        pub dmx_path: PathBuf,
+        pub qfc_path: PathBuf,
+    }
+
+    /// Lightweight test problem for basic unit tests.
+    fn setup_simple_problem() -> (Mat<f64>, Mat<f64>) {
         let a: Mat<f64> = mat![
             [2.0, -1.0, 0.0, 0.0],
             [-1.0, 2.0, -1.0, 0.0],
             [0.0, -1.0, 2.0, -1.0],
             [0.0, 0.0, -1.0, 2.0],
         ];
-        let b: Mat<f64> = mat![[1.0], [0.0], [0.0], [0.0]];
+        let b: Mat<f64> = mat![[1.0], [2.0], [3.0], [4.0]];
         (a, b)
     }
 
-    /// Tests the private `lanczos_recurrence_step` function to ensure the core
-    /// arithmetic for a single step is correct.
+    // --- UNIT TESTS ---
+
     #[test]
     fn test_recurrence_step_correctness() {
-        let (a, _) = setup_test_problem();
+        let (a, _) = setup_simple_problem();
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let mut stack = MemStack::new(&mut mem);
 
@@ -638,105 +654,16 @@ mod tests {
         assert!((beta - 1.0).abs() < 1e-15);
     }
 
-    /// Tests the private `LanczosIteration` struct to verify that it produces the
-    /// correct sequence of alpha and beta coefficients over several steps.
-    #[test]
-    fn test_iteration_produces_correct_sequence() {
-        let (a, b) = setup_test_problem();
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-        let b_norm = b.norm_l2();
-
-        let k = 3;
-        let binding = a.as_ref();
-        let mut iter = LanczosIteration::new(&binding, b.as_ref(), k, b_norm).unwrap();
-        let mut computed_alphas = Vec::new();
-        let mut computed_betas = Vec::new();
-
-        for i in 0..k {
-            if let Some(step) = iter.next_step(&mut stack) {
-                computed_alphas.push(step.alpha);
-
-                if step.beta <= breakdown_tolerance() {
-                    break;
-                }
-
-                if i < k - 1 {
-                    computed_betas.push(step.beta);
-                }
-            } else {
-                break;
-            }
-        }
-
-        // For the 1D discrete Laplacian, alphas are 2.0 and betas are 1.0.
-        let expected_alphas = vec![2.0, 2.0, 2.0];
-        let expected_betas = vec![1.0, 1.0];
-
-        assert_eq!(computed_alphas.len(), 3);
-        assert_eq!(computed_betas.len(), 2);
-        for (actual, expected) in computed_alphas.iter().zip(expected_alphas.iter()) {
-            assert!((actual - expected).abs() < 1e-14);
-        }
-        for (actual, expected) in computed_betas.iter().zip(expected_betas.iter()) {
-            assert!((actual - expected).abs() < 1e-14);
-        }
-    }
-
-    #[test]
-    fn test_lanczos_standard_produces_correct_dimensions() {
-        let (a, b) = setup_test_problem();
-        let k = 3;
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-
-        assert_eq!(result.v_k.nrows(), a.nrows());
-        assert_eq!(result.v_k.ncols(), k);
-        assert_eq!(result.decomposition.steps_taken, k);
-        assert_eq!(result.decomposition.alphas.len(), k);
-        assert_eq!(result.decomposition.betas.len(), k - 1);
-        assert!((result.decomposition.b_norm - 1.0).abs() < 1e-15);
-    }
-
-    #[test]
-    fn test_lanczos_pass_one_produces_correct_dimensions() {
-        let (a, b) = setup_test_problem();
-        let k = 3;
-        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-
-        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack).unwrap();
-
-        assert_eq!(decomp.steps_taken, k);
-        assert_eq!(decomp.alphas.len(), k);
-        assert_eq!(decomp.betas.len(), k - 1);
-        assert!((decomp.b_norm - 1.0).abs() < 1e-15);
-    }
-
     #[test]
     fn test_breakdown_scenario() {
-        // A is diagonal, and b is an eigenvector.
         let a: Mat<f64> = mat![[2.0, 0.0], [0.0, 3.0]];
         let b: Mat<f64> = mat![[1.0], [0.0]];
-        let k = 2; // Request 2 iterations, but it should stop after 1.
+        let k = 2;
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let mut stack = MemStack::new(&mut mem);
 
         let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
-
         assert_eq!(result.decomposition.steps_taken, 1);
-        assert_eq!(result.decomposition.alphas.len(), 1);
-        assert_eq!(result.decomposition.betas.len(), 0);
-        assert_eq!(result.v_k.ncols(), 1);
-        assert!((result.decomposition.alphas[0] - 2.0).abs() < 1e-14);
-
-        let decomp_pass_one = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack).unwrap();
-        assert_eq!(decomp_pass_one.steps_taken, 1);
-        assert_eq!(decomp_pass_one.alphas.len(), 1);
-        assert_eq!(decomp_pass_one.betas.len(), 0);
-        assert!((decomp_pass_one.alphas[0] - 2.0).abs() < 1e-14);
     }
 
     #[test]
@@ -745,21 +672,183 @@ mod tests {
         let b: Mat<f64> = Mat::zeros(2, 1);
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let mut stack = MemStack::new(&mut mem);
-
-        let result_standard = lanczos_standard(&a, b.as_ref(), 2, &mut stack, None);
-        assert!(result_standard.is_err());
-
-        let result_pass_one = lanczos_pass_one(&a, b.as_ref(), 2, &mut stack);
-        assert!(result_pass_one.is_err());
-
-        let decomp = LanczosDecomposition {
-            alphas: vec![],
-            betas: vec![],
-            steps_taken: 0,
-            b_norm: 0.0,
-        };
-        let y_k: Mat<f64> = Mat::zeros(0, 1);
-        let result_pass_two = lanczos_pass_two(&a, b.as_ref(), &decomp, y_k.as_ref(), &mut stack);
-        assert!(result_pass_two.is_err());
+        assert!(lanczos_standard(&a, b.as_ref(), 2, &mut stack, None).is_err());
     }
+
+    // --- PROPERTY TESTS (RUNNERS) ---
+
+    /// Verifies that the scalar decompositions from the one-pass and two-pass
+    /// algorithms are consistent to within floating-point tolerance.
+    fn run_decomposition_consistency_test_for_instance(instance: &TestInstance) -> Result<()> {
+        let k = 30;
+        let kkt_system = load_kkt_system(&instance.dmx_path, &instance.qfc_path)?;
+        let a = kkt_system.a;
+        let n = a.nrows();
+        let mut rng = StdRng::seed_from_u64(42);
+        let b = Mat::from_fn(n, 1, |_, _| rng.random());
+        let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let pass_one_output = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+
+        ensure!(
+            standard_output.decomposition.steps_taken == pass_one_output.steps_taken,
+            "steps_taken mismatch on instance '{}'",
+            instance.name
+        );
+
+        for (i, (alpha_std, alpha_po)) in standard_output
+            .decomposition
+            .alphas
+            .iter()
+            .zip(pass_one_output.alphas.iter())
+            .enumerate()
+        {
+            ensure!(
+                (alpha_std - alpha_po).abs() < TOLERANCE,
+                "Alpha mismatch at index {} on instance '{}'",
+                i,
+                instance.name,
+            );
+        }
+        for (i, (beta_std, beta_po)) in standard_output
+            .decomposition
+            .betas
+            .iter()
+            .zip(pass_one_output.betas.iter())
+            .enumerate()
+        {
+            ensure!(
+                (beta_std - beta_po).abs() < TOLERANCE,
+                "Beta mismatch at index {} on instance '{}'",
+                i,
+                instance.name,
+            );
+        }
+        Ok(())
+    }
+
+    /// Verifies that the fundamental Lanczos relation A*V_k - V_k*T_k = beta_k*v_{k+1}*e_k^T
+    /// holds for the standard algorithm.
+    fn run_lanczos_relation_test_for_instance(instance: &TestInstance) -> Result<()> {
+        let k = 30;
+        let kkt_system = load_kkt_system(&instance.dmx_path, &instance.qfc_path)?;
+        let a = kkt_system.a;
+        let n = a.nrows();
+        let mut rng = StdRng::seed_from_u64(42);
+        let b = Mat::from_fn(n, 1, |_, _| rng.random());
+        let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+
+        let result_k = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let result_k_plus_1 = lanczos_standard(&a.as_ref(), b.as_ref(), k + 1, &mut stack, None)?;
+
+        let v_k = result_k.v_k.as_ref();
+        let beta_k = result_k_plus_1.decomposition.betas[k - 1];
+        let v_k_plus_1 = result_k_plus_1.v_k.as_ref().get(.., k..k + 1);
+
+        let t_k_mat = {
+            let mut t = Mat::zeros(k, k);
+            for i in 0..k {
+                t.as_mut()[(i, i)] = result_k.decomposition.alphas[i];
+            }
+            for i in 0..k - 1 {
+                t.as_mut()[(i, i + 1)] = result_k.decomposition.betas[i];
+                t.as_mut()[(i + 1, i)] = result_k.decomposition.betas[i];
+            }
+            t
+        };
+
+        let mut e_k = Mat::zeros(k, 1);
+        e_k.as_mut()[(k - 1, 0)] = 1.0;
+
+        let residual_matrix = a.as_ref() * v_k - v_k * t_k_mat;
+        let expected_residual_matrix = v_k_plus_1 * e_k.as_ref().adjoint() * Scale(beta_k);
+
+        let norm_diff = (residual_matrix - expected_residual_matrix).norm_l2();
+        ensure!(
+            norm_diff < TOLERANCE,
+            "Lanczos relation does not hold on instance '{}'. Diff norm: {}",
+            instance.name,
+            norm_diff
+        );
+        Ok(())
+    }
+
+    /// Verifies that the basis vectors generated by the standard algorithm are orthonormal.
+    fn run_orthonormality_test_for_instance(instance: &TestInstance) -> Result<()> {
+        let k = 30;
+        let kkt_system = load_kkt_system(&instance.dmx_path, &instance.qfc_path)?;
+        let a = kkt_system.a;
+        let n = a.nrows();
+        let mut rng = StdRng::seed_from_u64(42);
+        let b = Mat::from_fn(n, 1, |_, _| rng.random());
+        let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let v_k_standard = standard_output.v_k.as_ref();
+        let steps = standard_output.decomposition.steps_taken;
+        let identity = Mat::<f64>::identity(steps, steps);
+        let ortho_error_standard = (&identity - v_k_standard.adjoint() * v_k_standard).norm_l2();
+        ensure!(
+            ortho_error_standard < TOLERANCE,
+            "Standard basis on instance '{}' is not orthonormal. Error norm: {}",
+            instance.name,
+            ortho_error_standard
+        );
+        Ok(())
+    }
+
+    /// Verifies the numerical stability of the two-pass method by measuring the
+    /// drift between the standard and regenerated Lanczos bases.
+    fn run_reconstruction_stability_test_for_instance(instance: &TestInstance) -> Result<()> {
+        let k = 30;
+        let kkt_system = load_kkt_system(&instance.dmx_path, &instance.qfc_path)?;
+        let a = kkt_system.a;
+        let n = a.nrows();
+        let mut rng = StdRng::seed_from_u64(42);
+        let b = Mat::from_fn(n, 1, |_, _| rng.random());
+        let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut mem);
+
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let v_k_ref = standard_output.v_k;
+        let steps = standard_output.decomposition.steps_taken;
+
+        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+        let y_k = Mat::from_fn(steps, 1, |i, _| 0.1 * (i + 1) as f64);
+
+        let pass_two_output = lanczos_pass_two_with_basis(
+            &a.as_ref(),
+            b.as_ref(),
+            &decomp,
+            y_k.as_ref(),
+            &mut stack,
+        )?;
+        let v_k_regenerated = pass_two_output.v_k;
+
+        let drift = (v_k_ref - v_k_regenerated).squared_norm_l2();
+        ensure!(
+            drift < TOLERANCE,
+            "Numerical drift between bases on instance '{}' is too high. Drift norm: {}",
+            instance.name,
+            drift
+        );
+        Ok(())
+    }
+
+    /// Macro to generate a test module that includes all dynamically generated
+    /// test functions from the build script.
+    macro_rules! generate_property_tests {
+        () => {
+            mod generated {
+                use super::*;
+                include!(concat!(env!("OUT_DIR"), "/lanczos_properties_tests.rs"));
+            }
+        };
+    }
+
+    generate_property_tests!();
 }

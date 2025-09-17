@@ -45,7 +45,7 @@ fn main() {
     println!("cargo:rerun-if-changed=data/");
 
     let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("properties_tests.rs");
+    let dest_path = Path::new(&out_dir).join("lanczos_properties_tests.rs");
     let mut file = BufWriter::new(File::create(&dest_path).unwrap());
 
     let instances = get_all_instances();
@@ -59,7 +59,7 @@ fn main() {
             format!(
                 r#"
 #[test]
-fn {test_type}_{fn_name_base}() -> anyhow::Result<()> {{
+fn property_{test_type}_{fn_name_base}() -> anyhow::Result<()> {{
     let instance = TestInstance {{
         name: "{name}".to_string(),
         dmx_path: "{dmx_path}".into(),

@@ -13,12 +13,12 @@ faer = "0.22.6"
 log = "0.4.28"
 glob = "0.3.3"
 thiserror = "2.0.16"
+anyhow = "1.0.99"
 
 # Development dependencies, only compiled for tests, benchmarks, and examples.
 [dev-dependencies]
 criterion = "0.7.0"
 rand = "0.9.2"
-anyhow = "1.0.99"
 
 # Configuration for benchmarks using Criterion.
 # We disable the default benchmark harness to use Criterion's custom one.
