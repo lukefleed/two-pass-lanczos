@@ -1,0 +1,532 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.2in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{fourier}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{latexsym}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{etoolbox}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usepackage{lipsum}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{mathtools}
+\usepackage{nccmath}
+\usepackage[most]{tcolorbox}
+\newtcolorbox[auto counter]{problem}[1][]{%
+    enhanced,
+    breakable,
+    colback=white,
+    colbacktitle=white,
+    coltitle=black,
+    fonttitle=\bfseries,
+    boxrule=.6pt,
+    titlerule=.2pt,
+    toptitle=3pt,
+    bottomtitle=3pt,
+    title=GitHub repository of this project}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\C}{\mathbb{C}}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{The Two-Pass Lanczos Method}
+\author{Luca Lombardo}
+\date{}
+
+\setlength{\parskip}{1em}
+\setlength{\parindent}{0em}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+    % Outline for the abstract.
+    % State the problem: computing f(A)b for large, sparse Hermitian matrices.
+    % Introduce Krylov subspace methods as the standard approach.
+    % Identify the core challenge: the prohibitive memory cost of storing the Lanczos basis vectors.
+    % Introduce the two-pass Lanczos method as a memory-efficient variant that addresses this challenge.
+    % State the fundamental trade-off: the method exchanges reduced memory for an increased computational workload.
+    % Conclude by positioning it as a simple and robust alternative to standard one-pass implementations, applicable to a general class of matrix functions.
+    \lipsum[1]
+\end{abstract}
+
+{\setlength{\parskip}{0em}
+\tableofcontents}
+\clearpage
+
+% ===================================================================
+\section{Introduction}
+% ===================================================================
+The computation of the action of a matrix function on a vector, an operation denoted as $\mathbf{x} = f(\mathbf{A})\mathbf{b}$, represents a fundamental task in numerical linear algebra and scientific computing \cite{golub2013matrix, frommer2008matrix}. For large, sparse Hermitian matrices, methods based on Krylov subspaces are standard. The foundational algorithm in this class is the Lanczos process, first introduced as a \emph{method of minimized iterations} for eigenvalue problems \cite{lanczos1950iteration}. While theoretically elegant, its standard implementation encounters a severe practical limitation: the necessity of storing an ever-growing basis of Lanczos vectors. This memory requirement often becomes prohibitive for the large-scale problems encountered in practice \cite{golub2013matrix}.
+
+To address this memory bottleneck, we examine a simple and effective variant known as the two-pass Lanczos method \cite{frommer2008matrix}. This approach fundamentally alters the standard algorithm by separating the computation into two distinct phases. It first generates the projection of the matrix without storing the basis, and then regenerates the basis in a second pass to construct the final solution. This report provides a formal analysis of this method, focusing on the explicit trade-off it presents: a significant reduction in memory storage at the cost of an increased computational workload.
+
+\subsection{The Problem of Computing Matrix Functions}
+We consider the problem of computing the vector $\mathbf{x} \in \mathbb{C}^n$ defined by the action of a matrix function on a vector $\mathbf{b} \in \mathbb{C}^n$,
+\begin{equation}
+    \mathbf{x} = f(\mathbf{A})\mathbf{b},
+\end{equation}
+where $\mathbf{A} \in \mathbb{C}^{n \times n}$ is a large, sparse Hermitian matrix and $f: \Omega \subseteq \mathbb{C} \to \mathbb{C}$ is a function defined on the spectrum of $\mathbf{A}$, $\sigma(\mathbf{A}) \subset \Omega$. The explicit computation of the matrix $f(\mathbf{A})$ is generally infeasible due to its high computational cost and the fact that $f(\mathbf{A})$ is typically a dense matrix even when $\mathbf{A}$ is sparse \cite{frommer2008matrix}. Our focus, therefore, is on methods that compute $\mathbf{x}$ directly.
+
+This problem is fundamental in many areas of scientific computing \cite{golub2013matrix}. A primary example is the solution of a large system of linear equations $\mathbf{Ax} = \mathbf{b}$, which corresponds to the case where $f(z) = z^{-1}$ and $\mathbf{A}$ is nonsingular \cite{saad2003iterative}. Another critical application arises in the numerical solution of systems of linear ordinary differential equations. The solution to the initial value problem $\mathbf{y}'(t) = \mathbf{A}\mathbf{y}(t)$, with $\mathbf{y}(0) = \mathbf{y}_0$, is given by $\mathbf{y}(t) = \exp(t\mathbf{A})\mathbf{y}_0$. This computation is an instance of our problem where the function is the matrix exponential, $f(z) = \exp(tz)$ \cite{frommer2008matrix}.
+
+\subsection{Krylov Subspace Methods: The Standard Approach}
+The standard framework for computing an approximation to $\mathbf{x} = f(\mathbf{A})\mathbf{b}$ for large matrices is based on projection onto a Krylov subspace \cite{frommer2008matrix, saad2003iterative}. We begin by formally defining this subspace.
+
+\begin{definition}[Krylov Subspace]
+    Given a matrix $\mathbf{A} \in \mathbb{C}^{n \times n}$ and a vector $\mathbf{b} \in \mathbb{C}^n$, the $k$-th Krylov subspace generated by $\mathbf{A}$ and $\mathbf{b}$ is the vector space
+    \begin{equation}
+        \mathcal{K}_k(\mathbf{A}, \mathbf{b}) = \text{span}\{\mathbf{b}, \mathbf{Ab}, \dots, \mathbf{A}^{k-1}\mathbf{b}\}.
+    \end{equation}
+\end{definition}
+The fundamental principle of a Krylov subspace method is to seek an approximate solution $\mathbf{x}_k$ within the low-dimensional subspace $\mathcal{K}_k(\mathbf{A}, \mathbf{b})$, where $k \ll n$. This is achieved through a projection process that can be summarized in three distinct stages, as described in \cite{frommer2008matrix}. First, we construct an orthonormal basis, typically via the Arnoldi or Lanczos iteration, for the subspace $\mathcal{K}_k(\mathbf{A}, \mathbf{b})$. Let this basis be the columns of the matrix $\mathbf{V}_k \in \mathbb{C}^{n \times k}$.
+
+Second, we project the high-dimensional operator $\mathbf{A}$ onto $\mathcal{K}_k(\mathbf{A}, \mathbf{b})$, which yields a small $k \times k$ matrix representation of the operator, typically a Hessenberg or tridiagonal matrix $\mathbf{T}_k = \mathbf{V}_k^H \mathbf{A} \mathbf{V}_k$. The original problem is thereby reduced to the evaluation of $f(\mathbf{T}_k)$, a task which is computationally feasible for small $k$.
+
+Finally, the solution to the projected problem is lifted back to the original $n$-dimensional space to form the final approximation. Assuming the starting vector for the basis construction is $\mathbf{v}_1 = \mathbf{b} / \|\mathbf{b}\|_2$, the approximation $\mathbf{x}_k$ to $\mathbf{x}$ is given by
+\begin{equation}
+    \mathbf{x}_k = \mathbf{V}_k f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2,
+\end{equation}
+where $\mathbf{e}_1$ is the first canonical basis vector in $\mathbb{C}^k$ \cite{frommer2008matrix}.
+
+\subsection{The Memory Bottleneck of the Standard Lanczos Process}
+The practical utility of approximating the solution via $\mathbf{x}_k = \mathbf{V}_k f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2$ is conditioned on our ability to construct and store the basis matrix $\mathbf{V}_k$. In a standard one-pass implementation, the Lanczos vectors $\{\mathbf{v}_j\}_{j=1}^k$ are generated sequentially and must all be retained in memory. This is because the final step involves forming a linear combination of these vectors, weighted by the components of the vector $\mathbf{y}_k = f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2$.
+
+This requirement imposes a memory cost that scales as $O(nk)$. For many problems of practical interest, particularly those arising from the discretization of partial differential equations, the dimension $n$ can be on the order of millions or larger. Concurrently, achieving a desired accuracy may require a number of iterations $k$ that is substantial, leading to a storage demand that exceeds the capacity of modern computing systems \cite{golub2013matrix}. This memory constraint is the primary bottleneck of the standard Lanczos process.
+
+To overcome this limitation, memory-efficient strategies are necessary. The two-pass Lanczos method is a simple but effective approach designed explicitly to address this problem of memory consumption \cite{frommer2008matrix}. The method is structured to avoid storing the entire basis $\mathbf{V}_k$ by decoupling the generation of the projected matrix $\mathbf{T}_k$ from the final synthesis of the solution vector $\mathbf{x}_k$.
+
+% ===================================================================
+
+\section{Symmetric Lanczos Process}
+% ===================================================================
+To analyze the two-pass variant, we first take a step back and review the standard symmetric Lanczos process. The derivation begins from the method of minimized iterations, as originally formulated by Lanczos \cite{lanczos1950iteration}. This approach demonstrates that the process of generating orthogonal vectors through successive applications of a symmetric operator yields a three-term recurrence relation. We then formalize this recurrence using modern matrix notation \cite{golub2013matrix}. The section concludes by establishing the relationship between the Lanczos process and the theory of Gauss quadrature. This connection provides the rigorous justification for the algorithm's application to the approximation of $f(\mathbf{A})\mathbf{b}$ for a general function $f$ \cite{golub2013matrix}.
+
+
+\subsection{Derivation via Successive Orthogonalization}
+We derive the Lanczos recurrence following the method of minimized iterations for a Hermitian operator $\mathbf{A} \in \mathbb{C}^{n \times n}$ \cite{lanczos1950iteration}. The procedure constructs a sequence of mutually orthogonal vectors $\{\mathbf{b}_k\}_{k=0}^{m-1}$ from an arbitrary starting vector $\mathbf{b}_0 \in \mathbb{C}^n$, where $\mathbf{b}_0 \neq \mathbf{0}$.
+
+The sequence is generated iteratively. At each step $k \ge 1$, a new vector $\mathbf{b}_k$ is formed by minimizing the Euclidean norm of a vector obtained by applying $\mathbf{A}$ to the previous vector $\mathbf{b}_{k-1}$ and removing its components along all previously generated vectors. For the first step, we define $\mathbf{b}_1$ as
+\begin{equation}
+    \mathbf{b}_1 = \mathbf{Ab}_0 - \alpha_0 \mathbf{b}_0,
+\end{equation}
+where the scalar $\alpha_0$ is chosen to minimize $\|\mathbf{b}_1\|_2$. This minimization is equivalent to enforcing the orthogonality condition $\mathbf{b}_1 \perp \mathbf{b}_0$. The inner product $(\mathbf{Ab}_0 - \alpha_0 \mathbf{b}_0, \mathbf{b}_0) = 0$ yields the coefficient
+\begin{equation}
+    \alpha_0 = \frac{(\mathbf{Ab}_0, \mathbf{b}_0)}{(\mathbf{b}_0, \mathbf{b}_0)}.
+\end{equation}
+The general step for $k \ge 2$ is to construct $\mathbf{b}_k$ from $\mathbf{Ab}_{k-1}$ by ensuring it is orthogonal to the entire set $\{\mathbf{b}_0, \mathbf{b}_1, \dots, \mathbf{b}_{k-1}\}$. This is achieved by defining $\mathbf{b}_k$ as
+\begin{equation}
+    \mathbf{b}_k = \mathbf{Ab}_{k-1} - \sum_{i=0}^{k-1} c_i \mathbf{b}_i.
+\end{equation}
+The coefficients $c_i$ are determined by the orthogonality conditions $(\mathbf{b}_k, \mathbf{b}_i) = 0$ for $i=0, \dots, k-1$. Due to the mutual orthogonality of the basis vectors $\{\mathbf{b}_j\}$, this simplifies to
+\begin{equation}
+    c_i = \frac{(\mathbf{Ab}_{k-1}, \mathbf{b}_i)}{(\mathbf{b}_i, \mathbf{b}_i)}.
+\end{equation}
+A key property emerges when the operator $\mathbf{A}$ is Hermitian. For any $i$, we can write
+\begin{equation}
+    (\mathbf{Ab}_{k-1}, \mathbf{b}_i) = (\mathbf{b}_{k-1}, \mathbf{Ab}_i).
+\end{equation}
+From the construction of the sequence, the vector $\mathbf{b}_{i+1}$ is a linear combination of $\mathbf{Ab}_i$ and the preceding vectors $\mathbf{b}_i, \dots, \mathbf{b}_0$. It follows that $\mathbf{Ab}_i$ lies in the span of $\{\mathbf{b}_0, \dots, \mathbf{b}_{i+1}\}$. By the orthogonality of the sequence, the inner product $(\mathbf{b}_{k-1}, \mathbf{Ab}_i)$ must be zero if $k-1 > i+1$, or equivalently, if $i < k-2$. Consequently, the coefficients $c_i$ are zero for all $i < k-2$.
+
+This establishes that the summation in the general step collapses, leaving a three-term recurrence relation. Following the notation in \cite{lanczos1950iteration}, we define $\alpha_{k-1} = c_{k-1}$ and $\beta_{k-2} = c_{k-2}$. The recurrence simplifies to
+\begin{equation}
+    \mathbf{b}_k = \mathbf{Ab}_{k-1} - \alpha_{k-1}\mathbf{b}_{k-1} - \beta_{k-2}\mathbf{b}_{k-2},
+\end{equation}
+which is the foundational recurrence of the symmetric Lanczos process.
+
+\subsection{Matrix Representation of the Lanczos Recurrence}
+The three-term recurrence relation derived from the principle of minimized iterations can be expressed in a compact matrix form. Let us define a sequence of orthonormal vectors $\{\mathbf{v}_j\}_{j=1}^k$ from the orthogonal vectors $\{\mathbf{b}_j\}_{j=1}^k$. We initialize the process with a unit-norm vector $\mathbf{v}_1 = \mathbf{b}_0 / \|\mathbf{b}_0\|_2$, where we adopt the notation from \cite{saad2003iterative}. The recurrence relation can be written as
+\begin{equation}
+    \beta_j \mathbf{v}_{j+1} = \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1} \mathbf{v}_{j-1},
+\end{equation}
+where, following the convention in \cite{saad2003iterative}, we set $\mathbf{v}_0 = \mathbf{0}$. The orthonormality of the vectors $\{\mathbf{v}_j\}$ dictates the choice of the coefficients. Specifically, taking the inner product of the above relation with $\mathbf{v}_j$ yields
+\begin{equation}
+    \alpha_j = \mathbf{v}_j^H \mathbf{A} \mathbf{v}_j.
+\end{equation}
+The coefficient $\beta_j$ is determined by the normalization condition $\|\mathbf{v}_{j+1}\|_2 = 1$, which gives $\beta_j = \|\mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1} \mathbf{v}_{j-1}\|_2$. This process is defined as the Lanczos iteration \cite{golub2013matrix}.
+
+After $k$ steps of this process, for $j=1, \dots, k$, we can write the set of recurrence relations in matrix form. Let $\mathbf{V}_k = [\mathbf{v}_1, \mathbf{v}_2, \dots, \mathbf{v}_k] \in \mathbb{C}^{n \times k}$ be the matrix whose columns are the Lanczos vectors. The recurrences can be collected into a single matrix equation
+\begin{equation}
+    \mathbf{A}\mathbf{V}_k = \mathbf{V}_k \mathbf{T}_k + \beta_k \mathbf{v}_{k+1} \mathbf{e}_k^T,
+\end{equation}
+where $\mathbf{e}_k$ is the $k$-th canonical basis vector in $\mathbb{C}^k$, and $\mathbf{T}_k$ is the $k \times k$ real symmetric tridiagonal matrix
+\begin{equation}
+    \mathbf{T}_k =
+    \begin{pmatrix}
+        \alpha_1 & \beta_1  &             &             \\
+        \beta_1  & \alpha_2 & \ddots      &             \\
+                 & \ddots   & \ddots      & \beta_{k-1} \\
+                 &          & \beta_{k-1} & \alpha_k
+    \end{pmatrix}
+\end{equation}
+This is the fundamental relation of the Lanczos process \cite{golub2013matrix}. From the orthonormality of the columns of $\mathbf{V}_k$, i.e., $\mathbf{V}_k^H \mathbf{V}_k = \mathbf{I}_k$, it follows that the tridiagonal matrix $\mathbf{T}_k$ is the orthogonal projection of $\mathbf{A}$ onto the Krylov subspace $\mathcal{K}_k(\mathbf{A}, \mathbf{v}_1)$, since
+\begin{equation}
+    \mathbf{V}_k^H \mathbf{A} \mathbf{V}_k = \mathbf{V}_k^H (\mathbf{V}_k \mathbf{T}_k + \beta_k \mathbf{v}_{k+1} \mathbf{e}_k^T) = \mathbf{T}_k.
+\end{equation}
+The tridiagonal and symmetric structure of $\mathbf{T}_k$ is a direct consequence of the three-term recurrence relation inherent to the orthogonalization process with a Hermitian operator.
+
+\subsection{Approximation of Matrix Functions and Gauss Quadrature}
+We now establish the theoretical justification for the efficacy of the Lanczos process in approximating $\mathbf{x} = f(\mathbf{A})\mathbf{b}$. The connection is established through the theory of Gauss quadrature, as detailed in \cite{golub2013matrix}. The core of the argument relates the scalar quantity $\mathbf{b}^H f(\mathbf{A})\mathbf{b}$ to a Riemann-Stieltjes integral for which the Lanczos process implicitly generates an optimal quadrature rule.
+
+Let $\mathbf{A} = \mathbf{Q}\mathbf{\Lambda}\mathbf{Q}^H$ be the spectral decomposition of $\mathbf{A}$, where $\mathbf{\Lambda} = \text{diag}(\lambda_1, \dots, \lambda_n)$ and $\mathbf{Q}$ is unitary. The scalar quantity $\mathbf{b}^H f(\mathbf{A})\mathbf{b}$ can be expressed as
+\begin{equation}
+    \mathbf{b}^H f(\mathbf{A})\mathbf{b} = \mathbf{b}^H \mathbf{Q} f(\mathbf{\Lambda}) \mathbf{Q}^H \mathbf{b} = \sum_{i=1}^{n} f(\lambda_i) |\gamma_i|^2,
+\end{equation}
+where $\boldsymbol{\gamma} = [\gamma_1, \dots, \gamma_n]^T = \mathbf{Q}^H \mathbf{b}$. This sum can be interpreted as a Riemann-Stieltjes integral
+\begin{equation}
+    I(f) = \int f(\lambda) \, d\alpha(\lambda),
+\end{equation}
+where $\alpha(\lambda)$ is a step function. The function $\alpha(\lambda)$ is piecewise constant and increases by $|\gamma_i|^2$ at each eigenvalue $\lambda_i$ of $\mathbf{A}$ \cite{golub2013matrix}.
+
+This integral can be approximated using a $k$-point Gauss quadrature rule, which takes the form
+\begin{equation}
+    I_k(f) = \sum_{j=1}^{k} w_j f(t_j),
+\end{equation}
+where $\{t_j\}_{j=1}^k$ are the nodes and $\{w_j\}_{j=1}^k$ are the weights. The fundamental theorem connecting this theory to our work is that the Lanczos process is a method for generating the nodes and weights of this quadrature rule \cite{golub2013matrix}. Specifically, after $k$ steps of the Lanczos process starting with $\mathbf{v}_1 = \mathbf{b}/\|\mathbf{b}\|_2$, the nodes $\{t_j\}_{j=1}^k$ of the $k$-point Gauss rule are the eigenvalues of the tridiagonal matrix $\mathbf{T}_k$. The weights $\{w_j\}_{j=1}^k$ are given by $\|\mathbf{b}\|_2^2$ times the squares of the first components of the normalized eigenvectors of $\mathbf{T}_k$.
+
+This quadrature rule is not merely an approximation; it is optimal in the sense that it is exact for all polynomials of degree up to $2k-1$. This optimality property leads to the approximation of the integral by the formula
+\begin{equation}
+    \mathbf{b}^H f(\mathbf{A})\mathbf{b} \approx \|\mathbf{b}\|_2^2 \mathbf{e}_1^T f(\mathbf{T}_k) \mathbf{e}_1.
+\end{equation}
+As shown in \cite{golub2013matrix}, this quadrature-based approximation for the scalar value rigorously justifies the choice of the vector approximation for $\mathbf{x} = f(\mathbf{A})\mathbf{b}$. The vector $\mathbf{x}_k \in \mathcal{K}_k(\mathbf{A}, \mathbf{b})$ that satisfies a corresponding set of moment-matching conditions is precisely the standard Lanczos approximation formula
+\begin{equation}
+    \mathbf{x}_k = \mathbf{V}_k f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2.
+\end{equation}
+Therefore, the effectiveness of the Lanczos process for computing the action of a general matrix function is a direct consequence of its deep connection to the theory of orthogonal polynomials and optimal quadrature.
+
+% ===================================================================
+
+\section{The Two-Pass Lanczos Algorithm}
+% ===================================================================
+Having established the theoretical framework for the standard Lanczos process and identified its principal limitation\footnote{the prohibitive memory cost of storing the basis vectors} we now present a memory-efficient variant known as the two-pass Lanczos algorithm \cite{frommer2008matrix, casulli2025low}. The algorithm resolves the memory constraint by decoupling the computation of the projected tridiagonal matrix $\mathbf{T}_k$ from the synthesis of the final solution vector $\mathbf{x}_k$.
+
+In this section, we provide a formal description of the two distinct phases of the algorithm: an initial pass to generate the coefficients of $\mathbf{T}_k$ without storing the basis, and a second pass to reconstruct the solution vector. We then present a formal analysis of the method's core trade-off, quantifying its memory savings against its increased computational cost. Finally, we discuss the generality of this approach in comparison to alternative methods, such as those that employ function-specific short-term recurrences for the solution vector \cite{saad2003iterative}.
+
+\subsection{Algorithmic Formulation}
+The two-pass Lanczos algorithm computes the standard Lanczos approximation $\mathbf{x}_k$ while avoiding the $O(nk)$ memory cost associated with storing the basis matrix $\mathbf{V}_k$. It achieves this by executing two distinct computational passes. The first pass computes the tridiagonal projection $\mathbf{T}_k$, and the second pass synthesizes the solution vector $\mathbf{x}_k$.
+
+\subsubsection{First Pass: Projection and Coefficient Generation}
+The objective of the first pass is to compute the scalar entries of the $k \times k$ symmetric tridiagonal matrix $\mathbf{T}_k$. This is accomplished by executing $k$ steps of the Lanczos iteration. The process generates a sequence of orthonormal vectors $\{\mathbf{v}_j\}$ via a three-term recurrence, which we derive here following the formulation in \cite{golub2013matrix}.
+
+The process is initialized with a starting vector of unit norm, $\mathbf{v}_1 = \mathbf{b} / \|\mathbf{b}\|_2$. The core of the algorithm is the following recurrence relation, where we define $\beta_0 = 0$ and $\mathbf{v}_0 = \mathbf{0}$:
+\begin{equation}
+    \beta_j \mathbf{v}_{j+1} = \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1}\mathbf{v}_{j-1}.
+    \label{eq:lanczos_recurrence}
+\end{equation}
+The scalars $\alpha_j$ and $\beta_j$ are determined at each step $j=1, \dots, k$ by enforcing the orthonormality of the sequence $\{\mathbf{v}_j\}$. Taking the inner product of equation \eqref{eq:lanczos_recurrence} with $\mathbf{v}_j$ and leveraging the orthogonality of the previously constructed vectors, we obtain the expression for the diagonal elements of $\mathbf{T}_k$:
+\begin{equation}
+    \alpha_j = \mathbf{v}_j^H \mathbf{A} \mathbf{v}_j.
+\end{equation}
+The off-diagonal elements, $\beta_j$, are determined by the normalization condition $\|\mathbf{v}_{j+1}\|_2 = 1$. Let $\mathbf{r}_j$ be the residual vector on the right-hand side of \eqref{eq:lanczos_recurrence} before normalization:
+\begin{equation}
+    \mathbf{r}_j = \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1}\mathbf{v}_{j-1}.
+\end{equation}
+Then, the coefficient $\beta_j$ is its Euclidean norm,
+\begin{equation}
+    \beta_j = \|\mathbf{r}_j\|_2.
+\end{equation}
+If $\beta_j=0$, the process terminates. Otherwise, the next Lanczos vector is computed as $\mathbf{v}_{j+1} = \mathbf{r}_j / \beta_j$.
+
+The structure of the three-term recurrence in \eqref{eq:lanczos_recurrence} is a critical property for memory-efficient implementations. In exact arithmetic, it ensures that the newly generated vector $\mathbf{v}_{j+1}$ is orthogonal to all preceding vectors $\mathbf{v}_1, \dots, \mathbf{v}_j$, despite its construction using only $\mathbf{v}_j$ and $\mathbf{v}_{j-1}$ \cite{golub2013matrix}. This allows for the sequential generation of the basis while only requiring storage for a constant number of $n$-dimensional vectors at any given time, thus addressing the memory bottleneck of the standard Lanczos process \cite{frommer2008matrix}.
+
+After $k$ iterations, the stored sequences of scalars $\{\alpha_j\}_{j=1}^k$ and $\{\beta_j\}_{j=1}^{k-1}$ are used to construct the real, symmetric tridiagonal matrix $\mathbf{T}_k$. The final operation of the first pass is the computation of the coefficient vector $\mathbf{y}_k \in \mathbb{C}^k$:
+\begin{equation}
+    \mathbf{y}_k = f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2.
+\end{equation}
+This vector contains the coordinates of the approximate solution $\mathbf{x}_k$ with respect to the orthonormal basis $\mathbf{V}_k$. The computation of $f(\mathbf{T}_k)$ is a small-scale dense matrix problem whose cost is independent of $n$, and is thus considered negligible for $k \ll n$.
+
+\subsubsection{Second Pass: Solution Reconstruction}
+In the second pass, we construct the final solution vector $\mathbf{x}_k$. The vector $\mathbf{x}_k$ is the linear combination of the Lanczos basis vectors, where the coefficients are the components of the vector $\mathbf{y}_k$ computed in the first pass. We define the approximation as
+\begin{equation}
+    \mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k = \sum_{j=1}^k (\mathbf{y}_k)_j \mathbf{v}_j.
+    \label{eq:solution_sum}
+\end{equation}
+To compute this sum without storing the matrix $\mathbf{V}_k$, we re-generate the Lanczos vectors sequentially \cite{frommer2008matrix}.
+
+We re-initialize the process with the starting vector $\mathbf{v}_1 = \mathbf{b} / \|\mathbf{b}\|_2$. We then execute the Lanczos iteration a second time, using the scalars $\{\alpha_j\}_{j=1}^k$ and $\{\beta_j\}_{j=1}^{k-1}$ that we stored during the first pass. For each $j = 1, \dots, k-1$, we reconstruct the subsequent Lanczos vectors via the same three-term recurrence from equation \eqref{eq:lanczos_recurrence}:
+\begin{equation}
+    \mathbf{v}_{j+1} = \frac{1}{\beta_j} \left( \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1}\mathbf{v}_{j-1} \right).
+    \label{eq:reconstruction_recurrence}
+\end{equation}
+As we re-generate each vector $\mathbf{v}_j$, we immediately use it to form the sum in equation \eqref{eq:solution_sum}. We initialize the solution vector $\mathbf{x}_k$ to zero. After computing $\mathbf{v}_1$, we form the first term of the sum. Then, for each $j=1, \dots, k-1$, after computing $\mathbf{v}_{j+1}$ via \eqref{eq:reconstruction_recurrence}, we update the solution as follows:
+\begin{equation}
+    \mathbf{x}_k \leftarrow \mathbf{x}_k + (\mathbf{y}_k)_{j+1} \mathbf{v}_{j+1}.
+\end{equation}
+The memory management is identical to that of the first pass. We use each vector $\mathbf{v}_j$ to compute $\mathbf{v}_{j+1}$ and to update the sum for $\mathbf{x}_k$. Afterwards, we retain it only as long as required for the next step of the recurrence. After $k$ steps, the accumulation is complete. The procedure is formally described in Algorithm \ref{alg:two_pass_lanczos}.
+
+\begin{algorithm}[H]
+    \caption{The Two-Pass Lanczos Method for $\mathbf{x} = f(\mathbf{A})\mathbf{b}$}
+    \label{alg:two_pass_lanczos}
+    \begin{algorithmic}
+        \State \textbf{Input:} Hermitian matrix $\mathbf{A} \in \mathbb{C}^{n \times n}$, vector $\mathbf{b} \in \mathbb{C}^n$, function $f$, number of iterations $k$.
+        \State \textbf{Output:} Approximate solution $\mathbf{x}_k \in \mathbb{C}^n$.
+
+        \Statex \Comment{\textit{--- First Pass: Coefficient Generation ---}}
+        \State Store $\mathbf{b}$ for the second pass. Let $\|\mathbf{b}\|_2$ be its norm.
+        \State $\beta_0 \leftarrow 0$, $\mathbf{v}_{\text{prev}} \leftarrow \mathbf{0}$, $\mathbf{v} \leftarrow \mathbf{b} / \|\mathbf{b}\|_2$.
+        \For{$j = 1, \dots, k$}
+        \State $\mathbf{w} \leftarrow \mathbf{A}\mathbf{v} - \beta_{j-1}\mathbf{v}_{\text{prev}}$
+        \State $\alpha_j \leftarrow \mathbf{v}^H \mathbf{w}$
+        \State $\mathbf{w} \leftarrow \mathbf{w} - \alpha_j \mathbf{v}$
+        \State $\beta_j \leftarrow \|\mathbf{w}\|_2$
+        \State Store $\alpha_j$ and $\beta_j$.
+        \State \textbf{if} $\beta_j = 0$ \textbf{then} break \textbf{end if}
+        \State $\mathbf{v}_{\text{prev}} \leftarrow \mathbf{v}$
+        \State $\mathbf{v} \leftarrow \mathbf{w} / \beta_j$
+        \EndFor
+        \State Let $k$ be the final iteration count.
+        \State Construct $\mathbf{T}_k \in \mathbb{R}^{k \times k}$ from stored $\{\alpha_j\}_{j=1}^k$ and $\{\beta_j\}_{j=1}^{k-1}$.
+        \State Compute coefficient vector $\mathbf{y}_k \leftarrow f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2$.
+
+        \Statex \Comment{\textit{--- Second Pass: Solution Reconstruction ---}}
+        \State $\beta_0 \leftarrow 0$, $\mathbf{v}_{\text{prev}} \leftarrow \mathbf{0}$, $\mathbf{v} \leftarrow \mathbf{b} / \|\mathbf{b}\|_2$.
+        \State $\mathbf{x}_k \leftarrow (\mathbf{y}_k)_1 \mathbf{v}$.
+        \For{$j = 1, \dots, k-1$}
+        \State $\mathbf{w} \leftarrow \mathbf{A}\mathbf{v} - \alpha_j \mathbf{v} - \beta_{j-1}\mathbf{v}_{\text{prev}}$ \Comment{Use stored $\alpha_j$, $\beta_{j-1}$}
+        \State $\mathbf{v}_{\text{next}} \leftarrow \mathbf{w} / \beta_j$ \Comment{Use stored $\beta_j$}
+        \State $\mathbf{x}_k \leftarrow \mathbf{x}_k + (\mathbf{y}_k)_{j+1} \mathbf{v}_{\text{next}}$
+        \State $\mathbf{v}_{\text{prev}} \leftarrow \mathbf{v}$
+        \State $\mathbf{v} \leftarrow \mathbf{v}_{\text{next}}$
+        \EndFor
+        \State \textbf{return} $\mathbf{x}_k$.
+    \end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Analysis of Computational and Memory Complexity}
+We now provide an analysis of the memory requirements and computational cost of the two-pass Lanczos algorithm \ref{alg:two_pass_lanczos}. Our analysis demonstrates that the method achieves a significant reduction in memory usage at the expense of an increased number of floating-point operations.
+
+\begin{proposition}[Memory Complexity]
+    Let $n$ be the dimension of the matrix $\mathbf{A}$ and $k$ be the number of iterations. The standard one-pass Lanczos algorithm requires $O(nk)$ memory for the basis vectors. The two-pass Lanczos algorithm reduces this requirement to $O(n)$.
+\end{proposition}
+
+\begin{proof}
+    The standard one-pass Lanczos method must store the entire basis matrix $\mathbf{V}_k = [\mathbf{v}_1, \dots, \mathbf{v}_k] \in \mathbb{C}^{n \times k}$ to synthesize the final solution $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$. The storage for this matrix is of size $nk$, leading to a memory complexity of $O(nk)$ \cite{golub2013matrix}.
+
+    We contrast this with the requirements of the two-pass algorithm. During the first pass, the computation of $\mathbf{v}_{j+1}$ at any step $j$ of the recurrence relation \eqref{eq:lanczos_recurrence} depends only on the vectors $\mathbf{v}_j$ and $\mathbf{v}_{j-1}$. Therefore, the number of $n$-dimensional vectors that we must hold simultaneously in memory is a small constant, independent of the iteration count $j$. The memory for these vectors is $O(n)$. The second pass has analogous requirements, as it employs the same recurrence. The total memory complexity is therefore dominated by the storage for a few $n$-dimensional vectors, which amounts to $O(n)$. We must also store the scalar coefficients, but this only adds an $O(k)$ term, which is negligible for $k \ll n$.
+\end{proof}
+
+\begin{proposition}[Computational Complexity]
+    Let the dominant computational cost of the Lanczos process be the matrix-vector products. For $k$ iterations, the standard one-pass Lanczos algorithm requires $k$ matrix-vector products. The two-pass algorithm requires $2k$ matrix-vector products.
+\end{proposition}
+
+\begin{proof}
+    The primary computational cost per iteration for a large, sparse matrix $\mathbf{A}$ is the matrix-vector product $\mathbf{A}\mathbf{v}_j$. The standard one-pass method performs one such product per iteration, resulting in a total of $k$ matrix-vector products.
+
+    The two-pass method, by its design, executes two separate passes. The first pass requires $k$ matrix-vector products to generate the coefficients of $\mathbf{T}_k$. To synthesize the solution, the second pass must re-generate the Lanczos basis vectors, which compels us to re-compute the same sequence of $k$ matrix-vector products. This brings the total number of matrix-vector products to $2k$. The doubling of the computational work is a defining characteristic of this two-stage approach \cite{frommer2008matrix}.
+\end{proof}
+
+% \subsection{Alternative Methods}
+% We contextualize the two-pass method by comparing it to an alternative strategy for achieving memory efficiency: the derivation of short-term recurrences for the solution vector itself. For certain specific choices of the function $f$, it is possible to algebraically manipulate the underlying Lanczos process to yield a direct update formula for the approximate solution $\mathbf{x}_k$.
+
+% The most prominent example of such a method is the Conjugate Gradient (CG) algorithm, which applies to the solution of Hermitian positive definite linear systems $\mathbf{Ax} = \mathbf{b}$, a case corresponding to the matrix function $f(z) = z^{-1}$ \cite{saad2003iterative}. The CG method computes the approximation at step $k$ via a direct update of the form
+% \begin{equation}
+%     \mathbf{x}_k = \mathbf{x}_{k-1} + z_k \mathbf{p}_{k-1},
+% \end{equation}
+% where the search direction vector $\mathbf{p}_{k-1}$ is itself updated using a short-term recurrence involving the residual vector. As detailed in \cite{saad2003iterative}, these recurrences are a direct algebraic consequence of the symmetric Lanczos process. This approach avoids storing the full basis $\mathbf{V}_k$ and is computationally very efficient for its specific task.
+
+% In contrast, the two-pass method we have described offers a more general framework. Its applicability is not restricted to a particular function $f$. The method's structure, which separates the projection from the reconstruction, is universal. The only function-specific operation is the computation of the small coefficient vector $\mathbf{y}_k = f(\mathbf{T}_k) \mathbf{e}_1 \|\mathbf{b}\|_2$ \cite{frommer2008matrix}. This allows the same two-pass procedure to be applied to any function for which $f(\mathbf{T}_k)$ can be computed, including the matrix exponential, inverse square root, or other functions arising in applications \cite{boricci2000fast, casulli2025low}.
+
+% This separation of concerns also leads to a conceptually direct implementation. The algorithm relies on the repeated application of the standard Lanczos recurrence, whose numerical properties are well-understood \cite{golub2013matrix}. It avoids the need to derive and implement function-specific update formulas for the high-dimensional solution and auxiliary vectors, which might have different numerical stability properties. The two-pass strategy therefore provides a simple and broadly applicable technique for addressing the memory limitations of the standard one-pass Lanczos process.
+
+% ===================================================================
+\section{Numerical Experiments}
+% ===================================================================
+In this section, we present a series of numerical experiments designed to validate the theoretical analysis and to assess the practical performance of the two-pass Lanczos algorithm. Our investigation is structured around three distinct objectives: to provide empirical evidence for the memory-versus-computation trade-off; to evaluate the scalability of both algorithms with respect to the problem dimension; and to conduct an analysis of the numerical stability and the potential for error propagation in the second pass.
+
+\subsection{Experimental Setup and Performance Metrics}
+All experiments were executed on a dual-socket machine running Ubuntu 22.04.2 LTS (GNU/Linux kernel 5.15.0-119-generic). The system is equipped with two Intel(R) Xeon(R) Gold 5318Y CPUs, each operating at a base frequency of 2.10GHz, for a total of 96 logical cores. The algorithms were implemented in Rust and compiled with \texttt{rustc} version 1.89.0 using release-level optimizations. All computations were performed using double-precision floating-point arithmetic.
+
+We defined a set of quantitative metrics. The primary measure of computational work is the total number of matrix-vector products, which provides a hardware-independent basis for comparison \cite{saad2003iterative}, as it is the dominant operation in Krylov subspace methods for large, sparse matrices. We also report the total wall-clock time as a practical measure of performance. The memory footprint is quantified by the Peak Resident Set Size, corresponding to the \texttt{VmPeak} field in the \texttt{/proc/self/status} virtual file on our Linux system.
+
+The accuracy of a computed solution $x_k$ is measured by its relative error with respect to a known ground-truth solution $x_{\text{true}}$. The stability of the basis generation is assessed by quantifying the loss of orthogonality of the Lanczos basis $V_k$ via the Frobenius norm $\|I - V_k^H V_k\|_F$, a known phenomenon in finite-precision implementations of the process \cite{golub2013matrix}. For the stability experiment, we also measure the numerical deviation, or \emph{drift}, between the standard basis $V_k$ and the re-generated basis $V'_k$, as well as the drift in the scalar recurrence coefficients. The ultimate impact is evaluated by the relative difference between the final solution vectors obtained from the one-pass and two-pass methods.
+
+\subsection{Test Problem Generation}
+
+% We derive our test problems from the Karush-Kuhn-Tucker (KKT) systems...
+% GIUSTIFICAZIONE: Questa è una dichiarazione di metodologia, che descrive l'origine dei problemi di test.
+% La struttura a blocchi è standard per i sistemi KKT in ottimizzazione.
+We derive our test problems from Karush-Kuhn-Tucker (KKT) systems associated with convex quadratic separable Min-Cost Flow problems. Such systems are sparse, symmetric, and exhibit the block saddle-point structure
+\begin{equation}
+    A =
+    \begin{pmatrix}
+        D & E^T \\
+        E & 0
+    \end{pmatrix} \in \mathbb{R}^{n \times n}.
+\end{equation}
+% We construct the node-arc incidence matrix, E...
+% GIUSTIFICAZIONE: Descrizione dell'implementazione pratica (contenuta in `src/utils/data_loader.rs`).
+% La sparsità di E è una proprietà intrinseca delle matrici di incidenza dei grafi.
+We construct the node-arc incidence matrix, $E$, from network topologies generated by the \texttt{netgen} utility, which allows for precise control over problem dimension and sparsity. The diagonal block $D$ is defined as $D = \text{diag}(d_1, \dots, d_m)$, with its entries drawn from a uniform random distribution, $d_i \sim U[1, C_D]$.
+
+% This construction allows us to control key mathematical properties of A.
+% GIUSTIFICAZIONE: Questa frase introduce la logica metodologica che segue.
+This construction allows us to control key mathematical properties of $A$.
+% First, by setting d_i >= 1, we ensure that D is a symmetric positive definite matrix,
+% as all its eigenvalues are positive.
+% GIUSTIFICAZIONE: Una matrice simmetrica è definita positiva se e solo se tutti i suoi autovalori sono positivi.
+% Per una matrice diagonale, gli autovalori sono gli elementi sulla diagonale.
+% Poiché d_i >= 1, sono tutti positivi. Fonte: [golub2013matrix, Sec. 8.1].
+First, by setting $d_i \ge 1$, we ensure that $D$ is a symmetric positive definite matrix, as all its eigenvalues are positive.
+% This choice is critical because it guarantees that the resulting KKT matrix A is indefinite.
+% The indefiniteness can be directly verified...
+% GIUSTIFICAZIONE: Una matrice simmetrica A è indefinita se la forma quadratica x^T*A*x assume sia valori positivi
+% che negativi. La dimostrazione che segue è una prova costruttiva basata su principi primi.
+This choice is critical because it guarantees that the resulting KKT matrix $A$ is indefinite. The indefiniteness can be directly verified by examining the quadratic form $x^T A x$: vectors of the form $[x_1^T, 0]^T$ with $x_1 \neq 0$ can yield positive values since $x_1^T D x_1 > 0$, while other choices of $x$ can lead to non-positive values.
+% Operating on indefinite matrices provides a robust test for the Lanczos algorithm, which is formulated
+% for general symmetric matrices and does not require positive definiteness \cite{golub2013matrix}.
+% GIUSTIFICAZIONE: L'algoritmo di Lanczos (es. Algoritmo 10.1.1 in [golub2013matrix]) richiede solo la simmetria
+% della matrice per funzionare e produrre una matrice T tridiagonale simmetrica. La positività definita
+% non è un'ipotesi necessaria per il processo, a differenza di metodi come il Gradiente Coniugato.
+Operating on indefinite matrices provides a robust test for the Lanczos algorithm, which is formulated for general symmetric matrices and does not require positive definiteness \cite{golub2013matrix}.
+
+% Second, the parameter C_D gives us control over the spectral properties of the problem.
+% GIUSTIFICAZIONE: Introduce la seconda principale ragione metodologica.
+Second, the parameter $C_D$ gives us control over the spectral properties of the problem.
+% For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest
+% to its smallest eigenvalue, kappa_2(D) = lambda_max(D) / lambda_min(D) \cite{saad2003iterative}.
+% GIUSTIFICAZIONE: Questa è la definizione standard del numero di condizionamento spettrale per matrici simmetriche.
+% Fonte: [saad2003iterative, Chap. 2].
+For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest to its smallest eigenvalue, $\kappa_2(D) = \lambda_{\max}(D) / \lambda_{\min}(D)$ \cite{saad2003iterative}.
+% Our construction thus yields kappa_2(D) approx C_D.
+% GIUSTIFICAZIONE: Deriva direttamente dalla definizione, poiché lambda_max(D) sarà vicino a C_D e lambda_min(D) sarà vicino a 1.
+Our construction thus yields $\kappa_2(D) \approx C_D$.
+% The spectral properties of the operator are known to fundamentally govern the convergence
+% rate of the Lanczos process \cite{golub2013matrix}.
+% GIUSTIFICAZIONE: Affermazione generale ma fondamentale. La teoria della convergenza dei metodi di Krylov lega
+% l'errore alla migliore approssimazione polinomiale sullo spettro della matrice. Questo è il tema
+% centrale di [golub2013matrix, Sec. 10.1.5].
+The spectral properties of the operator are known to fundamentally govern the convergence rate of the Lanczos process \cite{golub2013matrix}.
+% By varying C_D, we can therefore generate both well-conditioned and ill-conditioned problem instances.
+% GIUSTIFICAZIONE: Conclusione logica dei punti precedenti. Se C_D controlla il condizionamento di un blocco
+% e questo influenza lo spettro globale, allora C_D ci permette di modulare la difficoltà del problema.
+By varying $C_D$, we can therefore generate both well-conditioned and ill-conditioned problem instances.
+% Using a uniform random distribution... ensures that our test instances are generic and not biased...
+% GIUSTIFICAZIONE: Questa è una giustificazione metodologica standard per garantire l'imparzialità
+% e la riproducibilità degli esperimenti, evitando casi patologici o artificialmente semplici.
+Using a uniform random distribution for the entries of $D$ ensures that our test instances are generic and not biased toward an artificially simple spectral structure.
+
+% To permit the exact computation of solution error, we adopt a known-solution methodology...
+% \cite{saad2003iterative}.
+% GIUSTIFICAZIONE: Questa pratica è lo standard de facto nella letteratura sui metodi iterativi, come si
+% evince dagli esempi e dalle analisi in testi di riferimento come [saad2003iterative].
+To permit the exact computation of solution error, we adopt a known-solution methodology, a standard validation technique in numerical analysis \cite{saad2003iterative}. We first define a ground-truth solution vector $x_{\text{true}}$ and then construct the right-hand side vector as $b := A x_{\text{true}}$.
+
+% To assess the robustness of the approach, we conduct experiments using two functions...
+% GIUSTIFICAZIONE: Introduce la scelta delle funzioni di test.
+To assess the robustness of the approach, we conduct experiments using two functions, $f$, chosen for their distinct analytical properties.
+% The first is the matrix exponential, f(z) = exp(z). As an entire function, it is a canonical
+% and well-behaved test case... \cite{frommer2008matrix}.
+% GIUSTIFICAZIONE: [frommer2008matrix, Sec. 4] è interamente dedicato all'esponenziale di matrice,
+% stabilendone la centralità come oggetto di studio.
+The first is the matrix exponential, $f(z) = \exp(z)$. As an entire function, it is a canonical and well-behaved test case for algorithms computing matrix functions \cite{frommer2008matrix}.
+% The Lanczos process itself is independent of f. Using a smooth function...
+% GIUSTIFICAZIONE: La derivazione del processo di Lanczos in [golub2013matrix, Sec. 10.1] mostra che la costruzione
+% di V_k e T_k dipende solo da A e dal vettore iniziale, non da f. f interviene solo nel calcolo finale f(T_k).
+The Lanczos process itself is independent of $f$. Using a smooth function like the exponential therefore allows a clear analysis of the algorithm's intrinsic properties, such as the stability of the basis re-generation, without confounding factors from singularities in $f$.
+
+% The second function is the inverse, f(z) = z^{-1}... The convergence of Krylov methods for this problem
+% is highly sensitive to the eigenvalues of A near zero... \cite{saad2003iterative}.
+% GIUSTIFICAZIONE: L'intero libro [saad2003iterative] è dedicato a questo problema. La sensibilità agli autovalori
+% piccoli è discussa in dettaglio nel contesto del Gradiente Coniugato [saad2003iterative, Sec. 6.11.3].
+The second function is the inverse, $f(z) = z^{-1}$, which recasts our problem as the solution of the linear system $Ax = b$. We select this function to evaluate the algorithm in the presence of a singularity at the origin. The convergence of Krylov methods for this problem is highly sensitive to the eigenvalues of $A$ near zero, making it an essential and challenging test case for numerical robustness, particularly for the indefinite KKT systems we employ \cite{saad2003iterative}.
+
+\subsection{Experiment 1: Memory and Computation Trade-off}
+The first experiment was designed to empirically validate the theoretical complexity analysis of the two-pass method. The objective was to demonstrate that it maintains a constant memory footprint with respect to the iteration count, unlike the linear growth of the one-pass method, at the cost of a doubled computational workload. The experiment was conducted by selecting a large, fixed-size matrix $\mathbf{A}$ and executing both algorithms on the same problem instance, varying the number of iterations $k$ across a predefined range. For each value of $k$, we recorded the peak RSS and the total wall-clock time. It was hypothesized that a plot of peak RSS versus $k$ would exhibit a linear profile for the one-pass algorithm and a constant profile for the two-pass algorithm, consistent with their respective $O(nk)$ and $O(n)$ memory complexities. Furthermore, the execution time of the two-pass method was expected to be approximately twice that of the one-pass method for any given $k$.
+
+\subsubsection{Results}
+We executed both algorithms on test instances of small, medium, and large dimensions. For each instance, we varied the number of iterations, $k$, and recorded the Peak Resident Set Size and the total wall-clock time.
+
+The memory consumption results, presented in the left panels of Figures \ref{fig:large_scale}, \ref{fig:medium_scale}, and \ref{fig:small_scale}, confirm the complexity analysis across all problem scales. The standard one-pass algorithm exhibits a linear growth in memory usage with respect to the iteration count $k$. This behavior stems directly from the need to store the entire basis matrix $\mathbf{V}_k \in \mathbb{C}^{n \times k}$, a requirement with a cost of $O(nk)$ \cite{golub2013matrix}. In contrast, the two-pass algorithm maintains a constant memory footprint, independent of $k$. This aligns with its theoretical $O(n)$ memory complexity, as the algorithm only requires simultaneous storage for a small, constant number of $n$-dimensional vectors.
+
+The analysis of wall-clock time, however, reveals a more complex behavior than the simplified theoretical model suggests.
+
+For the large-scale instance with 500k arcs, shown in Figure \ref{fig:large_scale} (right panel), the wall-clock time of the two-pass method is only marginally greater than that of the one-pass method. Their execution time ratio remains close to unity, approximately $1.1$. This observation appears to contradict the theoretical expectation that the two-pass method should perform nearly twice the work \cite{frommer2008matrix}. The discrepancy arises because for very large $n$, the dominant computational cost shifts from the sparse matrix-vector products to the dense vector operations for solution reconstruction. Both the final matrix-vector product $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ in the one-pass method and the incremental accumulation in the two-pass method have a complexity of $O(nk)$. When the matrix $\mathbf{V}_k$ is too large to fit in any CPU cache, these operations become fundamentally limited by the system's main memory bandwidth. This large, common cost term dominates the total execution time for both methods and masks the effect of the doubled sparse matrix-vector products.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs500k_rho3_memory.pdf}
+        \centerline{(a) Peak Memory Usage}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs500k_rho3_time.pdf}
+        \centerline{(b) Wall-Clock Time}
+    \end{minipage}
+    \caption{Performance results for a large-scale problem instance (500k arcs). The left panel shows peak memory usage, while the right panel shows wall-clock time.}
+    \label{fig:large_scale}
+\end{figure}
+
+As we reduce the problem dimension, this dynamic changes. For the medium-scale instance with 50k arcs, the results in Figure \ref{fig:medium_scale} (right panel) show that the two-pass method is consistently faster than the standard one-pass method. This performance reversal stems from the memory access patterns of the algorithms. The standard algorithm's reconstruction step accesses a large contiguous block of memory for $\mathbf{V}_k$, generating an inefficient access pattern with poor data locality that leads to a high rate of cache misses. The two-pass algorithm, by contrast, operates on a small working set of vectors at each step. The processor's cache hierarchy manages this small working set effectively, resulting in a high cache hit rate and superior performance.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs50k_rho3_memory.pdf}
+        \centerline{(a) Peak Memory Usage}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs50k_rho3_time.pdf}
+        \centerline{(b) Wall-Clock Time}
+    \end{minipage}
+    \caption{Performance results for a medium-scale problem instance (50k arcs). The left panel shows peak memory usage, while the right panel shows wall-clock time.}
+    \label{fig:medium_scale}
+\end{figure}
+
+This effect becomes even more pronounced for the small-scale instance with 5k arcs, shown in Figure \ref{fig:small_scale} (right panel). Here, the working set of the two-pass method can reside almost entirely within the fastest L1 and L2 caches, maximizing its performance advantage. In this cache-friendly regime, the performance gain from eliminating cache misses far outweighs the cost of the additional matrix-vector products. These results demonstrate that the algorithmic structure of the two-pass method, designed for memory efficiency, can yield an unexpected but significant advantage in computational speed by aligning more effectively with the memory architecture of modern processors.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs5k_rho3_memory.pdf}
+        \centerline{(a) Peak Memory Usage}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{assets/exp1/arcs5k_rho3_time.pdf}
+        \centerline{(b) Wall-Clock Time}
+    \end{minipage}
+    \caption{Performance results for a small-scale problem instance (5k arcs). The left panel shows peak memory usage, while the right panel shows wall-clock time.}
+    \label{fig:small_scale}
+\end{figure}
+
+\subsection{Experiment 2: Scalability}
+The second experiment assessed how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, the number of iterations $k$ was fixed to a constant value, and a family of test matrices of increasing dimension $n$ was generated. The network topologies were constructed to maintain a constant ratio of arcs to nodes, ensuring comparable sparsity across all instances. For each problem size, both algorithms were executed, and their peak RSS and total wall-clock time were recorded. We expected the results to show that the memory advantage of the two-pass algorithm becomes increasingly significant as $n$ grows. Specifically, a plot of peak RSS versus $n$ should show a substantially steeper slope for the one-pass method than for the two-pass method. The ratio of the execution times was expected to remain close to two, confirming the consistent nature of the computational trade-off across different problem scales.
+
+\subsection{Experiment 3: Numerical Stability}
+The final experiment provides a formal investigation into the numerical stability of the two-pass approach, with the objective of quantifying the numerical error introduced by the re-generation of the Lanczos basis. For this analysis, a problem of moderate dimension was selected, for which the explicit storage of the basis matrices is feasible. Let $\mathbf{V}_k = [\mathbf{v}_1, \dots, \mathbf{v}_k]$ denote the basis generated by the standard one-pass algorithm, and let $\mathbf{V}'_k = [\mathbf{v}'_1, \dots, \mathbf{v}'_k]$ be the basis re-generated during the second pass using the stored coefficients $\{\alpha_j, \beta_j\}$. The analysis comprised three principal measurements performed as a function of the iteration count $k$. First, we computed the loss of orthogonality for both bases by tracking the quantities $\|\mathbf{I}_k - \mathbf{V}_k^H \mathbf{V}_k\|_F$ and $\|\mathbf{I}_k - (\mathbf{V}'_k)^H \mathbf{V}'_k\|_F$. Second, we quantified the numerical drift between the two bases by computing the Frobenius norm of their difference, $\|\mathbf{V}_k - \mathbf{V}'_k\|_F$. Third, we evaluated the effect on the final solution by computing the norm of the difference between the two computed vectors, $\|\mathbf{x}_k - \mathbf{x}'_k\|_2$, where $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ and $\mathbf{x}'_k = \mathbf{V}'_k \mathbf{y}_k$. We hypothesized that both bases would exhibit a similar rate of orthogonality loss. The basis deviation $\|\mathbf{V}_k - \mathbf{V}'_k\|_F$ was expected to be small but non-zero, growing with $k$ due to the accumulation of floating-point errors. Critically, the final solution deviation $\|\mathbf{x}_k - \mathbf{x}'_k\|_2$ was expected to remain close to machine precision, which would demonstrate that the numerical drift in the re-generated basis does not catastrophically degrade the accuracy of the final solution.
+
+
+
+
+\clearpage
+\bibliographystyle{unsrt}
+\bibliography{ref}
+\nocite{*}
+
+\end{document}
