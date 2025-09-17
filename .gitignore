@@ -3,4 +3,10 @@
 .github/instructions/project.instructions.md
 faer.xml
 .github/instructions/faer.instructions.md
-data/
+data/1000
+data/2000
+data/3000
+data/arcs500k_rho1
+data/arcs500k_rho3
+data/arcs50k_rho3
+data/arcs5k_rho3
