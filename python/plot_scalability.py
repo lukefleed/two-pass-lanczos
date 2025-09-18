@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 This script generates plots for the scalability analysis (Experiment 2).
@@ -13,93 +12,123 @@ variants as the problem size increases.
 """
 
 import argparse
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import scienceplots
-import os
 
-# # Apply the 'science' and 'ieee' styles for high-quality plots.
-# # Disable TeX rendering to avoid dependency on a LaTeX installation.
-# plt.style.use(['science', 'ieee'])
-# plt.rcParams.update({
-#     "text.usetex": False,
-# })
-
-def plot_memory_vs_dimension(df, output_path):
+def create_plots(input_csv_path: str, output_prefix: str):
     """
-    Generates a plot of Peak Memory Usage vs. Problem Dimension (n).
+    Reads experiment data and generates memory and time scalability plots.
 
-    Args:
-        df (pd.DataFrame): The input data.
-        output_path (str): The path to save the output PDF file.
+    # Arguments
+
+    * `input_csv_path` - Path to the input CSV file containing the results.
+
+    * `output_prefix` - The base path and filename for the output plots.
+                        For example, 'report/figures/scalability' will produce
+                        'scalability_memory.pdf' and 'scalability_time.pdf'.
     """
-    fig, ax = plt.subplots(figsize=(6, 4))
-
-    # Convert KB to MB for better readability
-    df['rss_mb'] = df['rss_kb'] / 1024
-
-    for variant in df['variant'].unique():
-        subset = df[df['variant'] == variant]
-        ax.plot(subset['n'], subset['rss_mb'], marker='o', linestyle='-', label=variant.replace('-', ' ').title())
-
-    ax.set_xlabel('Problem Dimension (n)')
-    ax.set_ylabel('Peak Memory Usage (MB)')
-    ax.set_title('Memory Scalability')
-    ax.legend(title='Lanczos Variant')
-    ax.grid(True)
-
-    fig.savefig(output_path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Generated plot: {output_path}")
-
-def plot_time_vs_dimension(df, output_path):
-    """
-    Generates a plot of Wall-Clock Time vs. Problem Dimension (n).
-
-    Args:
-        df (pd.DataFrame): The input data.
-        output_path (str): The path to save the output PDF file.
-    """
-    fig, ax = plt.subplots(figsize=(6, 4))
-
-    for variant in df['variant'].unique():
-        subset = df[df['variant'] == variant]
-        ax.plot(subset['n'], subset['time_s'], marker='o', linestyle='-', label=variant.replace('-', ' ').title())
-
-    ax.set_xlabel('Problem Dimension (n)')
-    ax.set_ylabel('Wall-Clock Time (s)')
-    ax.set_title('Time Scalability')
-    ax.legend(title='Lanczos Variant')
-    ax.grid(True)
-
-    fig.savefig(output_path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Generated plot: {output_path}")
-
-def main():
-    """
-    Main function to parse arguments, read data, and generate plots.
-    """
-    parser = argparse.ArgumentParser(description='Plot scalability analysis results.')
-    parser.add_argument('--input', type=str, required=True, help='Path to the input CSV file from the scalability runner.')
-    parser.add_argument('--output-prefix', type=str, required=True, help='Prefix for the output PDF plot files.')
-
-    args = parser.parse_args()
-
     try:
-        df = pd.read_csv(args.input)
+        df = pd.read_csv(input_csv_path)
     except FileNotFoundError:
-        print(f"Error: Input file not found at {args.input}")
+        print(f"Error: Input file not found at '{input_csv_path}'")
         return
 
-    # Ensure the output directory exists
-    output_dir = os.path.dirname(args.output_prefix)
+    # Ensure the output directory exists.
+    output_dir = os.path.dirname(output_prefix)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    # Generate the plots
-    plot_memory_vs_dimension(df, f"{args.output_prefix}_memory.pdf")
-    plot_time_vs_dimension(df, f"{args.output_prefix}_time.pdf")
+    # Separate dataframes for each variant for easier plotting.
+    df_standard = df[df['variant'] == 'standard'].copy()
+    df_two_pass = df[df['variant'] == 'two-pass'].copy()
 
-if __name__ == '__main__':
+    # Set a professional plot style consistent with other experiments.
+    plt.style.use('seaborn-v0_8-whitegrid')
+
+    # --- 1. Memory Scalability Plot ---
+    fig_mem, ax_mem = plt.subplots(figsize=(8, 6))
+
+    ax_mem.plot(
+        df_standard["n"],
+        df_standard["rss_kb"] / 1024,  # Convert KB to MB
+        label="Standard Lanczos (One-Pass)",
+        marker='o',
+        linestyle='-',
+        color='C0'
+    )
+    ax_mem.plot(
+        df_two_pass["n"],
+        df_two_pass["rss_kb"] / 1024,
+        label="Two-Pass Lanczos",
+        marker='x',
+        linestyle='--',
+        color='C1'
+    )
+
+    ax_mem.set_xlabel("Problem Dimension (n)", fontsize=12)
+    ax_mem.set_ylabel("Peak Memory Usage (MB)", fontsize=12)
+    ax_mem.set_title("Memory Scalability vs. Problem Dimension", fontsize=14, fontweight='bold')
+    ax_mem.legend(fontsize=11)
+    ax_mem.tick_params(axis='both', which='major', labelsize=10)
+    ax_mem.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    memory_plot_path = f"{output_prefix}_memory.pdf"
+    fig_mem.savefig(memory_plot_path, bbox_inches='tight')
+    print(f"Successfully saved memory plot to: {memory_plot_path}")
+    plt.close(fig_mem)
+
+    # --- 2. Time Scalability Plot ---
+    fig_time, ax_time = plt.subplots(figsize=(8, 6))
+
+    ax_time.plot(
+        df_standard["n"],
+        df_standard["time_s"],
+        label="Standard Lanczos (One-Pass)",
+        marker='o',
+        linestyle='-',
+        color='C0'
+    )
+    ax_time.plot(
+        df_two_pass["n"],
+        df_two_pass["time_s"],
+        label="Two-Pass Lanczos",
+        marker='x',
+        linestyle='--',
+        color='C1'
+    )
+
+    ax_time.set_xlabel("Problem Dimension (n)", fontsize=12)
+    ax_time.set_ylabel("Wall-Clock Time (seconds)", fontsize=12)
+    ax_time.set_title("Time Scalability vs. Problem Dimension", fontsize=14, fontweight='bold')
+    ax_time.legend(fontsize=11)
+    ax_time.tick_params(axis='both', which='major', labelsize=10)
+    ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    time_plot_path = f"{output_prefix}_time.pdf"
+    fig_time.savefig(time_plot_path, bbox_inches='tight')
+    print(f"Successfully saved time plot to: {time_plot_path}")
+    plt.close(fig_time)
+
+def main():
+    """Parses command-line arguments and runs the plotting function."""
+    parser = argparse.ArgumentParser(
+        description="Plot results for the Lanczos scalability experiment."
+    )
+    parser.add_argument(
+        "--input",
+        type=str,
+        required=True,
+        help="Path to the input CSV file generated by the scalability runner."
+    )
+    parser.add_argument(
+        "--output-prefix",
+        type=str,
+        required=True,
+        help="Prefix for the output PDF plot files (e.g., 'report/figures/scalability')."
+    )
+    args = parser.parse_args()
+    create_plots(args.input, args.output_prefix)
+
+if __name__ == "__main__":
     main()
