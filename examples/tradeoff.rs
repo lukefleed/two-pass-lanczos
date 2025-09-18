@@ -7,7 +7,7 @@
 
 mod common;
 
-use crate::common::{CommonArgs, get_peak_rss_kb};
+use crate::common::CommonArgs;
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use faer::{
@@ -16,6 +16,7 @@ use faer::{
     prelude::*,
     sparse::{SparseColMat, SymbolicSparseColMat, Triplet},
 };
+use lanczos_project::utils::perf::get_peak_rss_kb;
 use lanczos_project::{
     solvers::{lanczos, lanczos_two_pass},
     utils::data_loader::load_kkt_system,
@@ -68,7 +69,7 @@ struct TradeoffResult {
 /// Helper function to find the first file with a given extension in a directory.
 fn find_file_by_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     let entries =
-        std::fs::read_dir(dir).with_context(|| format!("Failed to read directory: {:?}", dir))?;
+        std::fs::read_dir(dir).with_context(|| format!("Failed to read directory: {dir:?}"))?;
 
     for entry in entries {
         let path = entry?.path();
@@ -92,25 +93,25 @@ fn assemble_tridiagonal_sparse(alphas: &[f64], betas: &[f64]) -> Result<SparseCo
     let mut triplets = Vec::with_capacity(3 * steps - 2);
 
     // Add diagonal elements (alphas)
-    for i in 0..steps {
+    for (i, &alpha) in alphas.iter().enumerate() {
         triplets.push(Triplet {
             row: i,
             col: i,
-            val: alphas[i],
+            val: alpha,
         });
     }
 
     // Add off-diagonal elements (betas)
-    for i in 0..steps - 1 {
+    for (i, &beta) in betas.iter().enumerate() {
         triplets.push(Triplet {
             row: i,
             col: i + 1,
-            val: betas[i],
+            val: beta,
         });
         triplets.push(Triplet {
             row: i + 1,
             col: i,
-            val: betas[i],
+            val: beta,
         });
     }
 
@@ -145,7 +146,7 @@ fn run_orchestrator() -> Result<()> {
     let mut child_handles = Vec::new();
 
     for variant in &variants_to_run {
-        log::info!("Spawning worker for variant: {:?}", variant);
+        log::info!("Spawning worker for variant: {variant:?}");
         let current_exe = std::env::current_exe()?;
         let child = Command::new(current_exe)
             .args(std::env::args_os().skip(1))
@@ -159,13 +160,13 @@ fn run_orchestrator() -> Result<()> {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .with_context(|| format!("Failed to spawn worker for variant {:?}", variant))?;
+            .with_context(|| format!("Failed to spawn worker for variant {variant:?}"))?;
         child_handles.push((variant, child));
     }
 
     let mut all_results = Vec::new();
     for (variant, handle) in child_handles {
-        log::info!("Waiting for worker {:?} to complete...", variant);
+        log::info!("Waiting for worker {variant:?} to complete...");
         let output = handle.wait_with_output()?;
 
         if !output.status.success() {
@@ -204,7 +205,7 @@ fn run_orchestrator() -> Result<()> {
 /// as CSV to standard output, which is then captured by the orchestrator.
 fn run_worker(variant: &LanczosVariant) -> Result<()> {
     let args = TradeoffArgs::parse();
-    log::info!("Worker for {:?} started.", variant);
+    log::info!("Worker for {variant:?} started.");
 
     let dmx_path = find_file_by_extension(&args.common.instance_dir, "dmx")?;
     let qfc_path = find_file_by_extension(&args.common.instance_dir, "qfc")?;
@@ -237,7 +238,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
     let mut stack_mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
 
     for k in (args.k_start..=args.k_end).step_by(args.k_step) {
-        log::info!("Worker {:?}: Running for k = {}...", variant, k);
+        log::info!("Worker {variant:?}: Running for k = {k}...");
 
         let (time_s, rss_kb) = match variant {
             LanczosVariant::Standard => {
@@ -246,7 +247,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
-                    &mut MemStack::new(&mut stack_mem),
+                    MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;
                 (start_time.elapsed().as_secs_f64(), get_peak_rss_kb())
@@ -257,7 +258,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
-                    &mut MemStack::new(&mut stack_mem),
+                    MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;
                 (start_time.elapsed().as_secs_f64(), get_peak_rss_kb())
@@ -273,6 +274,6 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
     }
 
     writer.flush()?;
-    log::info!("Worker for {:?} finished.", variant);
+    log::info!("Worker for {variant:?} finished.");
     Ok(())
 }

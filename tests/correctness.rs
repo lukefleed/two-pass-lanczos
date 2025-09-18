@@ -68,12 +68,12 @@ fn assemble_tridiagonal(alphas: &[f64], betas: &[f64]) -> Mat<f64> {
         return Mat::zeros(0, 0);
     }
     let mut t_k = Mat::zeros(steps, steps);
-    for i in 0..steps {
-        t_k.as_mut()[(i, i)] = alphas[i];
+    for (i, &alpha) in alphas.iter().enumerate() {
+        t_k.as_mut()[(i, i)] = alpha;
     }
-    for i in 0..steps - 1 {
-        t_k.as_mut()[(i, i + 1)] = betas[i];
-        t_k.as_mut()[(i + 1, i)] = betas[i];
+    for (i, &beta) in betas.iter().enumerate() {
+        t_k.as_mut()[(i, i + 1)] = beta;
+        t_k.as_mut()[(i + 1, i)] = beta;
     }
     t_k
 }
@@ -131,8 +131,8 @@ macro_rules! generate_correctness_test {
             // Analytically compute the ground truth solution `x_true = f(A)b`.
             // For a diagonal matrix A, this simplifies to a component-wise product.
             let mut x_true = Mat::zeros(n, 1);
-            for i in 0..n {
-                x_true.as_mut()[(i, 0)] = $f(eigs[i]) * b.as_ref()[(i, 0)];
+            for (i, &eig) in eigs.iter().enumerate() {
+                x_true.as_mut()[(i, 0)] = $f(eig) * b.as_ref()[(i, 0)];
             }
 
             let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
@@ -233,7 +233,7 @@ generate_correctness_test!(
                 },
             );
             // 3. Reconstruct exp(T_k) = Q * exp(D) * Q^T.
-            let f_t_k = &q_tk * &f_d * q_tk.adjoint();
+            let f_t_k = q_tk * &f_d * q_tk.adjoint();
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
             // 4. Compute the final result vector.
@@ -268,7 +268,7 @@ generate_correctness_test!(
                     if i == j { d_lambda[i].exp() } else { 0.0 }
                 },
             );
-            let f_t_k = &q_tk * &f_d * q_tk.adjoint();
+            let f_t_k = q_tk * &f_d * q_tk.adjoint();
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)

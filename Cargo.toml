@@ -26,6 +26,10 @@ opt-level = 3
 name = "datagen"
 path = "src/bin/datagen.rs"
 
+[[bin]]
+name = "scalability"
+path = "src/bin/scalability.rs"
+
 [profile.release]
 # Enable full optimizations.
 opt-level = 3

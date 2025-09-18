@@ -17,7 +17,7 @@ fn get_all_instances() -> Vec<TestInstance> {
     let data_dirs = ["data/1000", "data/2000", "data/3000"];
     data_dirs
         .into_iter()
-        .flat_map(|dir| glob(&format!("{}/*.dmx", dir)).expect("Failed to read glob pattern"))
+        .flat_map(|dir| glob(&format!("{dir}/*.dmx")).expect("Failed to read glob pattern"))
         .filter_map(|entry| {
             if let Ok(dmx_path) = entry {
                 let qfc_path = dmx_path.with_extension("qfc");

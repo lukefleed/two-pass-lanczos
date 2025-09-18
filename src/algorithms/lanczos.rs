@@ -212,7 +212,7 @@ where
 
         // Normalize the initial vector efficiently using the pre-computed norm.
         let inv_norm = T::from_real_impl(&T::Real::recip_impl(&b_norm));
-        let v1 = &b * Scale(inv_norm);
+        let v1 = b * Scale(inv_norm);
 
         Ok(Self {
             operator,
@@ -514,7 +514,7 @@ where
 
     let mut v_prev = Mat::<T>::zeros(b.nrows(), 1);
     let inv_norm = T::from_real_impl(&T::Real::recip_impl(&decomposition.b_norm));
-    let mut v_curr = &b * Scale(inv_norm);
+    let mut v_curr = b * Scale(inv_norm);
 
     let mut x_k = &v_curr * Scale(T::copy_impl(&y_k[(0, 0)]));
     let mut v_k_regen = if store_basis {
@@ -528,7 +528,7 @@ where
     let mut work = Mat::<T>::zeros(b.nrows(), 1);
 
     for j in 0..decomposition.steps_taken - 1 {
-        let alpha_j = T::Real::copy_impl(&decomposition.alphas[j]);
+        let _alpha_j = T::Real::copy_impl(&decomposition.alphas[j]);
         let beta_j = T::Real::copy_impl(&decomposition.betas[j]);
         let beta_prev = if j == 0 {
             T::Real::zero_impl()
@@ -536,7 +536,7 @@ where
             T::Real::copy_impl(&decomposition.betas[j - 1])
         };
 
-        let (computed_alpha, computed_beta_option) = lanczos_recurrence_step(
+        let (_, computed_beta_option) = lanczos_recurrence_step(
             operator,
             work.as_mut(),
             v_curr.as_ref(),
@@ -545,31 +545,9 @@ where
             stack,
         );
 
-        #[cfg(debug_assertions)]
-        {
-            let tolerance = breakdown_tolerance::<T::Real>() * T::Real::from_f64_impl(10.0);
-            let alpha_diff = T::Real::abs_impl(&sub(&computed_alpha, &alpha_j));
-            if alpha_diff > tolerance {
-                eprintln!(
-                    "Warning: Alpha mismatch in second pass at step {j}: stored={:?}, computed={:?}",
-                    alpha_j, computed_alpha
-                );
-            }
-            if let Some(ref computed_beta) = computed_beta_option {
-                let beta_diff = T::Real::abs_impl(&sub(computed_beta, &beta_j));
-                if beta_diff > tolerance {
-                    eprintln!(
-                        "Warning: Beta mismatch in second pass at step {j}: stored={:?}, computed={:?}",
-                        beta_j, computed_beta
-                    );
-                }
-            }
-        }
-
         if computed_beta_option.is_none() {
             return Err(LanczosErrorKind::InputError(format!(
-                "Unexpected breakdown in second pass at step {}",
-                j
+                "Unexpected breakdown in second pass at step {j}"
             ))
             .into());
         }

@@ -104,7 +104,7 @@ def create_plots(input_csv_path: str, output_prefix: str):
     ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
 
     # Ensure the y-axis starts at zero.
-    ax_time.set_ylim(bottom=0)
+    # ax_time.set_ylim(bottom=0)
 
     time_plot_path = f"{output_prefix}_time.pdf"
     fig_time.savefig(time_plot_path, bbox_inches='tight')

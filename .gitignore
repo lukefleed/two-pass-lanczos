@@ -10,6 +10,7 @@ data/arcs500k_rho1
 data/arcs500k_rho3
 data/arcs50k_rho3
 data/arcs5k_rho3
+data/scalability
 *.aux
 *.bbl
 *.blg
