@@ -10,3 +10,14 @@ data/arcs500k_rho1
 data/arcs500k_rho3
 data/arcs50k_rho3
 data/arcs5k_rho3
+*.aux
+*.bbl
+*.blg
+*.brf
+*.fls
+*.fdb_latexmk
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
