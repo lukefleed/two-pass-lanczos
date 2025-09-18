@@ -27,6 +27,7 @@ use lanczos_project::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Instant,
@@ -35,6 +36,8 @@ use std::{
 /// Environment variable to differentiate between orchestrator and worker processes.
 /// If this is set, the process runs in worker mode for the specified variant.
 const VARIANT_ENV_VAR: &str = "LANCZOS_SCALABILITY_VARIANT";
+/// Maximum number of attempts to generate a valid instance for each problem size.
+const MAX_DATAGEN_ATTEMPTS: u32 = 5;
 
 /// Defines the Lanczos algorithm variant to be run in a worker process.
 #[derive(ValueEnum, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
@@ -123,51 +126,43 @@ fn run_orchestrator() -> Result<()> {
     let args = ScalabilityArgs::parse();
     log::info!("Orchestrator starting scalability experiment...");
 
-    // Create the CSV writer. Opening the file here will truncate it if it exists.
     let mut writer = csv::Writer::from_path(&args.output)
         .with_context(|| format!("Failed to create CSV writer for {:?}", &args.output))?;
-
-    let variants_to_run = [LanczosVariant::Standard, LanczosVariant::TwoPass];
 
     for arcs in (args.arcs_start..=args.arcs_end).step_by(args.arcs_step) {
         log::info!("Processing problem size: {arcs} arcs");
 
-        // 1. Create a unique directory for this problem instance's data.
         let instance_dir = PathBuf::from(format!("data/scalability/arcs_{arcs}_rho_{}", args.rho));
-        fs::create_dir_all(&instance_dir)
-            .with_context(|| format!("Failed to create instance directory: {instance_dir:?}"))?;
 
-        // 2. Invoke the `datagen` binary to generate the KKT system files.
-        log::info!("Invoking datagen to generate instance data...");
-        let datagen_status = Command::new("./target/release/datagen")
-            .arg("--arcs")
-            .arg(arcs.to_string())
-            .arg("--rho")
-            .arg(args.rho.to_string())
-            .arg("--output-dir")
-            .arg(&instance_dir)
-            .status()
-            .context(
-                "Failed to execute datagen binary. Did you build with `cargo build --release`?",
-            )?;
+        let generation_result =
+            generate_and_validate_instance(arcs, args.rho, &instance_dir, MAX_DATAGEN_ATTEMPTS);
 
-        if !datagen_status.success() {
-            // Log the error and continue to the next problem size.
-            log::error!(
-                "datagen process failed with status: {}. Skipping this problem size.",
-                datagen_status
-            );
-            continue;
-        }
-        log::info!("Datagen completed successfully.");
+        let valid_instance_dir = match generation_result {
+            Ok(Some(dir)) => dir,
+            Ok(None) => {
+                log::error!(
+                    "Failed to generate a valid instance for {arcs} arcs after {} attempts. Skipping.",
+                    MAX_DATAGEN_ATTEMPTS
+                );
+                continue;
+            }
+            Err(e) => {
+                log::error!(
+                    "An unrecoverable error occurred during data generation for {arcs} arcs: {}. Skipping.",
+                    e
+                );
+                continue;
+            }
+        };
 
-        // 3. Spawn worker processes for each Lanczos variant.
+        // If we have a valid instance, proceed to spawn workers.
+        let variants_to_run = [LanczosVariant::Standard, LanczosVariant::TwoPass];
         for &variant in &variants_to_run {
             log::info!("Spawning worker for variant: {variant:?}");
             let current_exe = std::env::current_exe()?;
             let child = Command::new(current_exe)
                 .arg("--instance-dir")
-                .arg(&instance_dir)
+                .arg(&valid_instance_dir)
                 .arg("--k-fixed")
                 .arg(args.k_fixed.to_string())
                 .env(
@@ -182,14 +177,12 @@ fn run_orchestrator() -> Result<()> {
                 .spawn()
                 .with_context(|| format!("Failed to spawn worker for variant {variant:?}"))?;
 
-            // 4. Capture and parse the worker's output.
             let output = child.wait_with_output()?;
             if !output.status.success() {
-                // Log the error and continue. This makes the experiment more robust.
                 log::error!(
                     "Worker process for variant {:?} on instance {:?} failed with status: {}. Skipping.",
                     variant,
-                    instance_dir,
+                    valid_instance_dir,
                     output.status
                 );
                 continue;
@@ -209,7 +202,6 @@ fn run_orchestrator() -> Result<()> {
                             record.time_s,
                             record.rss_kb
                         );
-                        // 5. Write the record to the CSV file immediately and flush.
                         writer.serialize(&record)?;
                         writer.flush()?;
                     }
@@ -234,6 +226,109 @@ fn run_orchestrator() -> Result<()> {
         &args.output
     );
     Ok(())
+}
+
+/// Generates and validates a test instance, retrying on failure.
+///
+/// This function encapsulates the logic for calling the `datagen` binary and
+/// then validating the output. If validation fails, it cleans up and retries
+/// up to `max_attempts` times.
+fn generate_and_validate_instance(
+    arcs: usize,
+    rho: u32,
+    instance_dir: &Path,
+    max_attempts: u32,
+) -> Result<Option<PathBuf>> {
+    for attempt in 1..=max_attempts {
+        // Clean up previous attempt's files, if any, and recreate the directory.
+        if instance_dir.exists() {
+            fs::remove_dir_all(instance_dir)?;
+        }
+        fs::create_dir_all(instance_dir)
+            .with_context(|| format!("Failed to create instance directory: {instance_dir:?}"))?;
+
+        log::info!(
+            "Invoking datagen (Attempt {}/{}) to generate instance data...",
+            attempt,
+            max_attempts
+        );
+
+        let datagen_status = Command::new("./target/release/datagen")
+            .arg("--arcs")
+            .arg(arcs.to_string())
+            .arg("--rho")
+            .arg(rho.to_string())
+            .arg("--instance-id")
+            .arg(attempt.to_string()) // Use attempt number as instance ID to change the seed.
+            .arg("--output-dir")
+            .arg(instance_dir)
+            .status()
+            .context(
+                "Failed to execute datagen binary. Did you build with `cargo build --release`?",
+            )?;
+
+        if !datagen_status.success() {
+            log::warn!(
+                "Datagen process failed with status: {}. Retrying...",
+                datagen_status
+            );
+            continue;
+        }
+
+        let dmx_path = match find_file_by_extension(instance_dir, "dmx") {
+            Ok(path) => path,
+            Err(_) => {
+                log::warn!("Datagen ran but did not produce a .dmx file. Retrying...");
+                continue;
+            }
+        };
+
+        match validate_dmx_file(&dmx_path)? {
+            true => {
+                log::info!("Datagen completed successfully with valid output.");
+                return Ok(Some(instance_dir.to_path_buf()));
+            }
+            false => {
+                log::warn!(
+                    "Validation failed for {:?}: found invalid node index. Retrying...",
+                    dmx_path
+                );
+                continue;
+            }
+        }
+    }
+    // If all attempts fail, return None.
+    Ok(None)
+}
+
+/// Quickly validates a DMX file to ensure it does not contain invalid (0-based) node indices.
+///
+/// # Returns
+/// `Ok(true)` if the file is valid, `Ok(false)` if an invalid index is found,
+/// or an `Err` if an I/O or parsing error occurs.
+fn validate_dmx_file(path: &Path) -> Result<bool> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let line = line?;
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.is_empty() || parts[0] != "a" {
+            continue;
+        }
+
+        // An arc line 'a u v ...' should have at least 3 parts.
+        if parts.len() < 3 {
+            continue;
+        }
+
+        // Check node indices u and v.
+        if parts[1] == "0" || parts[2] == "0" {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 /// Helper function to find the first file with a given extension in a directory.
@@ -266,13 +361,9 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
     let a: &SparseColMat<usize, f64> = &kkt_system.a;
     let n = a.nrows();
 
-    // The vector `b` is constructed from a known solution for consistency, though
-    // for this experiment, we are not checking the solution's correctness.
     let x_true = Mat::<f64>::from_fn(n, 1, |_, _| 1.0 / (n as f64).sqrt());
     let b = a * &x_true;
 
-    // A solver for the tridiagonal system T_k y = e_1. This uses `faer`'s
-    // efficient sparse LU decomposition, which is O(k) for a tridiagonal system.
     let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>> {
         let steps = alphas.len();
         if steps == 0 {
@@ -310,7 +401,6 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
 
     let mut stack_mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
 
-    // Execute the specified Lanczos variant and measure performance.
     let (time_s, rss_kb) = match variant {
         LanczosVariant::Standard => {
             let start_time = Instant::now();
@@ -336,7 +426,6 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
         }
     };
 
-    // Serialize the single result to stdout.
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
