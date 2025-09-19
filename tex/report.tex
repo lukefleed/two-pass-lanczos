@@ -535,49 +535,53 @@ We fixed the number of iterations at $k=500$ and analyzed the performance of bot
     \label{fig:scalability}
 \end{figure}
 
-The memory consumption profiles in Figure \ref{fig:scalability}(a) show a stark contrast between the two methods. To analyze this, we model the total peak memory, $M_{\text{total}}$, as the sum of a shared base cost and an algorithm-specific cost:
+The memory consumption profiles in Figure \ref{fig:scalability} (a) show a stark contrast between the two methods. To formalize this analysis, we model the total peak memory usage, $M(n, k)$, as a function of the problem dimension $n$ and the number of iterations $k$. This total memory can be decomposed into a base cost required for problem representation and an additional cost specific to the algorithm's execution:
 \begin{equation}
-    M_{\text{total}}(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k).
+    M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k).
 \end{equation}
-The base component, $M_{\text{base}}(n)$, is required by both algorithms to load the problem data. It consists primarily of the memory to store the sparse KKT matrix $A$ and a small, constant number of $n$-dimensional work vectors (e.g., for the current and previous Lanczos vectors, residuals, and the solution vector). Since the number of non-zero entries in $A$ is proportional to $n$ in our test cases, this base cost scales linearly with the problem dimension, $M_{\text{base}}(n) = O(n)$.
+The base component, $M_{\text{base}}(n)$, is common to both algorithms. It includes the memory for storing the sparse KKT matrix $\mathbf{A} \in \mathbb{R}^{n \times n}$ and a constant number of work vectors, $c_v$, each of dimension $n$. Let $\text{nnz}(\mathbf{A})$ be the number of non-zero entries in $\mathbf{A}$, and let $s_d$ be the size of a double-precision float. The storage for $\mathbf{A}$ in a Compressed Sparse Column (CSC) format requires approximately $s_d(\text{nnz}(\mathbf{A}) + n) + s_i(\text{nnz}(\mathbf{A}))$, where $s_i$ is the size of an integer index. For our problem instances, $\text{nnz}(\mathbf{A}) \propto n$. Therefore, the base memory cost is strictly linear in $n$:
+\begin{equation}
+    M_{\text{base}}(n) = (c_A + c_v s_d)n + O(1),
+\end{equation}
+where $c_A$ is a constant related to the storage of the sparse matrix.
 
-The difference arises from the algorithm-specific term, $M_{\text{alg}}(n, k)$. The two-pass algorithm is designed to minimize this term; it only stores the scalar coefficients, making its specific cost negligible, $M_{\text{alg, TP}} = O(k)$. In contrast, the standard one-pass algorithm must store the entire $n \times k$ basis matrix $V_k$, leading to a significant additional memory cost of $M_{\text{alg, STD}}(n, k) = n \cdot k \cdot \texttt{sizeof(double)}$, which is an $O(nk)$ term.
+The substantial difference between the methods lies in the algorithm-specific term, $M_{\text{alg}}(n, k)$. The two-pass algorithm is designed to minimize this term by storing only the scalar coefficients of $\mathbf{T}_k$, resulting in a negligible cost of $M_{\text{alg, TP}}(k) = O(k)$. In contrast, the standard one-pass algorithm must store the entire basis matrix $\mathbf{V}_k \in \mathbb{R}^{n \times k}$, which imposes a significant memory overhead:
+\begin{equation}
+    M_{\text{alg, std}}(n, k) = n \cdot k \cdot s_d.
+\end{equation}
+With $k$ fixed, the asymptotic memory complexities for the two methods are therefore:
+\begin{align}
+    M_{\text{TP}}(n)    & = M_{\text{base}}(n) + O(k) \approx c_{\text{base}} \cdot n                             \\
+    M_{\text{std}}(n,k) & = M_{\text{base}}(n) + (k \cdot s_d) \cdot n = (c_{\text{base}} + k \cdot s_d) \cdot n.
+\end{align}
+This model predicts that the memory usage of both methods should grow linearly with $n$, but the slope of the growth for the standard method should exceed that of the two-pass method by a constant factor of $k \cdot s_d$.
 
-With $k$ fixed, the memory models predict linear growth for both methods, but with substantially different slopes:
-\begin{align*}
-    M_{\text{TP}}(n)  & = M_{\text{base}}(n) + O(k) \approx c_{\text{base}} \cdot n                                                                    \\
-    M_{\text{STD}}(n) & = M_{\text{base}}(n) + (k \cdot \texttt{sizeof(double)}) \cdot n = (c_{\text{base}} + k \cdot \texttt{sizeof(double)}) \cdot n
-\end{align*}
-The growth rate, or slope, of the standard method's memory usage should exceed that of the two-pass method by a constant factor proportional to $k$.
-
-Table \ref{tab:scalability_data} presents the measured data, which aligns with this model. The memory usage for the two-pass method establishes an empirical baseline for $M_{\text{base}}(n)$. The last column, representing $M_{\text{alg, STD}}$, isolates the cost of storing the basis matrix $V_k$. This difference grows linearly with $n$, as predicted.
+The empirical data presented in Table \ref{tab:scalability_data} aligns with our model. The memory usage of the two-pass method provides a stable empirical baseline for $M_{\text{base}}(n)$. The last column, representing the term $M_{\text{alg, std}}(n, k)$, isolates the cost of storing the basis matrix $\mathbf{V}_k$. A linear regression performed on this column yields an empirical growth rate of approximately $3968$ bytes per unit increase in $n$. This is in line with the theoretical rate of $k \cdot s_d = 500 \cdot 8 = 4000$ bytes per unit $n$.
 
 \begin{table}[H]
-
     \centering
     \begin{tabular}{rrrr}
         \hline
         \multicolumn{1}{c}{\textbf{Dimension ($n$)}} & \multicolumn{1}{c}{\textbf{Standard (MB)}} & \multicolumn{1}{c}{\textbf{Two-Pass (MB)}} & \multicolumn{1}{c}{\textbf{Difference (MB)}} \\
         \hline
-        50,365                                       & 1188.9                                     & 806.1                                      & 382.8                                        \\
-        100,516                                      & 1577.2                                     & 812.6                                      & 764.6                                        \\
-        150,632                                      & 1967.2                                     & 882.0                                      & 1085.2                                       \\
-        200,730                                      & 2353.3                                     & 884.2                                      & 1469.1                                       \\
-        250,816                                      & 2741.1                                     & 889.5                                      & 1851.6                                       \\
-        300,894                                      & 3132.8                                     & 961.0                                      & 2171.8                                       \\
-        350,966                                      & 3516.6                                     & 901.5                                      & 2615.1                                       \\
-        401,033                                      & 3904.3                                     & 905.6                                      & 2998.7                                       \\
-        451,095                                      & 4291.9                                     & 910.9                                      & 3381.0                                       \\
-        501,155                                      & 4679.6                                     & 916.3                                      & 3763.3                                       \\
+        50,365                                       & 997.1                                      & 806.1                                      & 191.0                                        \\
+        100,516                                      & 1193.8                                     & 812.6                                      & 381.2                                        \\
+        150,632                                      & 1392.6                                     & 882.0                                      & 510.6                                        \\
+        200,730                                      & 1587.5                                     & 884.2                                      & 703.3                                        \\
+        250,816                                      & 1784.3                                     & 833.2                                      & 951.1                                        \\
+        300,894                                      & 1985.0                                     & 965.1                                      & 1019.9                                       \\
+        350,966                                      & 2180.4                                     & 963.4                                      & 1217.0                                       \\
+        401,033                                      & 2374.5                                     & 1097.5                                     & 1277.0                                       \\
+        451,095                                      & 2571.2                                     & 860.7                                      & 1710.5                                       \\
+        501,155                                      & 2767.9                                     & 867.6                                      & 1900.3                                       \\
         \hline
     \end{tabular}
+    \caption{Peak memory usage (RSS) in megabytes for a fixed number of iterations ($k=500$). The difference isolates the memory cost of the basis matrix $\mathbf{V}_k$ in the standard algorithm.}
     \label{tab:scalability_data}
-    \caption{Peak memory usage (RSS) in megabytes for a fixed number of iterations ($k=500$). The difference isolates the memory cost of the basis matrix $V_k$ in the standard algorithm.}
 \end{table}
 
-The wall-clock time for both algorithms, shown in Figure \ref{fig:scalability}(b), scales linearly with $n$. The total computational cost is dominated by two types of operations: sparse matrix-vector products (SpMV), with cost $O(\text{nnz}(A))$, and dense vector operations (e.g., AXPY), with cost $O(n)$. Since $\text{nnz}(A)$ is proportional to $n$, the total work per iteration is $O(n)$. Executing $k$ iterations leads to an expected total time complexity of $O(nk)$. As $k$ is constant, this results in the observed linear scaling with $n$.
 
-The two-pass method performs approximately twice the number of SpMVs and vector operations compared to the standard method. However, the total runtimes are nearly identical. This is because a significant portion of the execution time is spent on the final solution reconstruction, which has a cost of $O(nk)$ for both methods. The standard method computes a single dense matrix-vector product, $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$. This operation, involving the large $n \times k$ matrix $\mathbf{V}_k$, exhibits poor data locality and can be constrained by main memory bandwidth. The two-pass method computes the sum incrementally, but the total number of floating-point operations is the same. Its operations on a small, cache-resident set of vectors can be more efficient for smaller $n$. As $n$ grows, the cost of the doubled SpMVs in the two-pass method begins to dominate, causing its runtime to slightly exceed that of the standard method. The results show that these competing architectural effects are closely balanced, making both methods comparable in speed for this problem class.
+The wall-clock time for both algorithms, shown in Figure \ref{fig:scalability} (b), scales linearly with the problem dimension $n$. This is consistent with the theoretical cost, which is dominated by $k$ iterations of operations (sparse matrix-vector products and vector additions) whose complexity is linear in $n$. With $k$ held constants, the total time complexity is $O(nk)$, resulting in the observed linear scaling.
 
 \subsection{Experiment 3: Numerical Stability}
 Our final experiment investigates the numerical stability of the two-pass approach. We quantify the numerical error that the basis re-generation introduces by selecting a problem of moderate dimension, for which we can explicitly store both basis matrices. Let $\mathbf{V}_k = [\mathbf{v}_1, \dots, \mathbf{v}_k]$ be the basis from the standard one-pass algorithm, and let $\mathbf{V}'_k = [\mathbf{v}'_1, \dots, \mathbf{v}'_k]$ be the basis re-generated during the second pass from the stored coefficients $\{\alpha_j, \beta_j\}$. As a function of the iteration count $k$, our analysis tracks three principal metrics. First, we compute the loss of orthogonality for both bases via the quantities $\|\mathbf{I}_k - \mathbf{V}_k^H \mathbf{V}_k\|_F$ and $\|\mathbf{I}_k - (\mathbf{V}'_k)^H \mathbf{V}'_k\|_F$. Second, we quantify the numerical drift between the two bases by computing $\|\mathbf{V}_k - \mathbf{V}'_k\|_F$. Third, we evaluate the impact on the final solution by computing the norm of the difference $\|\mathbf{x}_k - \mathbf{x}'_k\|_2$, where $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ and $\mathbf{x}'_k = \mathbf{V}'_k \mathbf{y}_k$.

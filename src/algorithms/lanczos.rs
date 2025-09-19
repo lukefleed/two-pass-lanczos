@@ -347,8 +347,22 @@ where
         }
     }
 
+    // --- Finalize the basis matrix V_k ---
+    // This logic is critical for memory efficiency.
+    // If the algorithm completed all k steps, the pre-allocated `v_k` has the correct
+    // size. We can move it directly to the output structure, avoiding a costly clone.
+    // If the algorithm terminated early (`steps_taken < k`), we must allocate a new,
+    // smaller matrix and copy the valid columns.
+    let final_v_k = if steps_taken == k {
+        // Move ownership of the matrix; a zero-cost operation.
+        v_k
+    } else {
+        // Termination was early; we must clone the valid part of the matrix.
+        v_k.as_ref().get(.., 0..steps_taken).to_owned()
+    };
+
     Ok(LanczosOutput {
-        v_k: v_k.as_ref().get(.., 0..steps_taken).to_owned(),
+        v_k: final_v_k,
         decomposition: LanczosDecomposition {
             alphas,
             betas,
