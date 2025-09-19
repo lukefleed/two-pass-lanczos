@@ -30,6 +30,10 @@ path = "src/bin/datagen.rs"
 name = "scalability"
 path = "src/bin/scalability.rs"
 
+[[bin]]
+name = "stability"
+path = "src/bin/stability.rs"
+
 [profile.release]
 # Enable full optimizations.
 opt-level = 3

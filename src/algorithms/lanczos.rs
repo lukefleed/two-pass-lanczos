@@ -288,7 +288,7 @@ where
 ///
 /// # Returns
 /// A `Result` containing the `LanczosOutput` on success, or a `LanczosError` on failure.
-pub(crate) fn lanczos_standard<T: ComplexField>(
+pub fn lanczos_standard<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
@@ -465,7 +465,7 @@ where
 /// regenerated basis matrix `V_k`. It is compiled only during testing and is
 /// used to verify the numerical stability of the regeneration process.
 #[allow(dead_code)]
-pub(crate) fn lanczos_pass_two_with_basis<T: ComplexField>(
+pub fn lanczos_pass_two_with_basis<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
