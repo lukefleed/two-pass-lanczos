@@ -484,6 +484,46 @@ where
     })
 }
 
+/// A specialized recurrence step for the second pass of the two-pass algorithm.
+///
+/// This function applies the Lanczos three-term recurrence using pre-computed
+/// coefficients `alpha_j` and `beta_prev` to regenerate the next unnormalized
+/// basis vector. It avoids re-computing any coefficients, which is both more
+/// efficient and more numerically faithful to the two-pass scheme.
+///
+/// # Arguments
+/// * operator: The linear operator A.
+/// * w: A pre-allocated mutable view to store the output vector.
+/// * v_curr: The current Lanczos vector, v_j.
+/// * v_prev: The previous Lanczos vector, v_{j-1}.
+/// * alpha_j: The pre-computed diagonal coefficient from the first pass.
+/// * beta_prev: The pre-computed off-diagonal coefficient from the first pass.
+/// * stack: Memory stack for temporary allocations.
+fn lanczos_reconstruction_step<T: ComplexField, O: LinOp<T>>(
+    operator: &O,
+    mut w: MatMut<'_, T>,
+    v_curr: MatRef<'_, T>,
+    v_prev: MatRef<'_, T>,
+    alpha_j: T::Real,
+    beta_prev: T::Real,
+    stack: &mut MemStack,
+) {
+    // Apply the operator: w = A * v_curr
+    operator.apply(w.rb_mut(), v_curr, Par::Seq, stack);
+
+    // This performs the operation w <- w - β_{j-1} * v_{j-1}
+    let beta_prev_scaled = T::from_real_impl(&beta_prev);
+    zip!(w.rb_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
+        *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
+    });
+
+    // This performs the operation w <- w - α_j * v_j using the pre-computed alpha.
+    let alpha_scaled = T::from_real_impl(&alpha_j);
+    zip!(w.rb_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
+        *w_i = sub(w_i, &mul(&alpha_scaled, v_curr_i));
+    });
+}
+
 /// Core implementation of the second Lanczos pass.
 ///
 /// This private function contains the logic to regenerate the basis and reconstruct
@@ -542,7 +582,8 @@ where
     let mut work = Mat::<T>::zeros(b.nrows(), 1);
 
     for j in 0..decomposition.steps_taken - 1 {
-        let _alpha_j = T::Real::copy_impl(&decomposition.alphas[j]);
+        // Retrieve all necessary coefficients computed during the first pass.
+        let alpha_j = T::Real::copy_impl(&decomposition.alphas[j]);
         let beta_j = T::Real::copy_impl(&decomposition.betas[j]);
         let beta_prev = if j == 0 {
             T::Real::zero_impl()
@@ -550,35 +591,36 @@ where
             T::Real::copy_impl(&decomposition.betas[j - 1])
         };
 
-        let (_, computed_beta_option) = lanczos_recurrence_step(
+        // Regenerate the unnormalized next vector by applying the recurrence
+        // with the stored coefficients, avoiding any re-computation.
+        lanczos_reconstruction_step(
             operator,
             work.as_mut(),
             v_curr.as_ref(),
             v_prev.as_ref(),
+            alpha_j,
             beta_prev,
             stack,
         );
 
-        if computed_beta_option.is_none() {
-            return Err(LanczosErrorKind::InputError(format!(
-                "Unexpected breakdown in second pass at step {j}"
-            ))
-            .into());
-        }
-
+        // Normalize the regenerated vector using the stored beta_j. The first pass
+        // ensures that beta_j is not numerically zero at this step.
         let inv_beta = T::from_real_impl(&T::Real::recip_impl(&beta_j));
         zip!(work.as_mut()).for_each(|unzip!(w_i)| {
             *w_i = mul(w_i, &inv_beta);
         });
 
+        // Accumulate the final solution vector component by component.
         let coeff = T::copy_impl(&y_k[(j + 1, 0)]);
         zip!(x_k.as_mut(), work.as_ref()).for_each(|unzip!(x_i, v_i)| {
             *x_i = add(x_i, &mul(&coeff, v_i));
         });
 
+        // Cycle the vectors for the next iteration.
         core::mem::swap(&mut v_prev, &mut v_curr);
         core::mem::swap(&mut v_curr, &mut work);
 
+        // If requested, store the regenerated basis vector.
         if let Some(m) = v_k_regen.as_mut() {
             m.col_mut(j + 1).copy_from(v_curr.as_ref().col(0));
         }
@@ -587,6 +629,7 @@ where
     Ok((x_k, v_k_regen))
 }
 
+#[allow(dead_code)]
 #[cfg(test)]
 mod tests {
     use super::*;

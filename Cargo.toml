@@ -34,6 +34,10 @@ path = "src/bin/scalability.rs"
 name = "stability"
 path = "src/bin/stability.rs"
 
+[[bin]]
+name = "tradeoff"
+path = "src/bin/tradeoff.rs"
+
 [profile.release]
 # Enable full optimizations.
 opt-level = 3

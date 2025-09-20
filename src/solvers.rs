@@ -30,22 +30,6 @@ use faer::{
 ///
 /// # Returns
 /// A `Result` containing the final approximate solution vector `x_k`, or a `LanczosError`.
-// Computes an approximation to `f(A)b` using the standard one-pass Lanczos method.
-///
-/// This method generates and stores an orthonormal basis for the Krylov subspace,
-/// resulting in a memory complexity of O(nk), where `n` is the dimension of the
-/// operator and `k` is the number of iterations.
-///
-/// # Arguments
-/// * `operator`: A linear operator `A` that implements `faer::matrix_free::LinOp`.
-/// * `b`: The starting vector. Must not be a zero vector.
-/// * `k`: The number of iterations to perform.
-/// * `stack`: Memory stack for temporary allocations.
-/// * `f_tk_solver`: A closure that takes the `alphas` and `betas` defining the
-///   tridiagonal matrix `T_k` and returns the vector `f(T_k) * e_1`.
-///
-/// # Returns
-/// A `Result` containing the final approximate solution vector `x_k`, or a `LanczosError`.
 pub fn lanczos<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
@@ -68,7 +52,8 @@ where
         return Ok(Mat::zeros(b.nrows(), 1));
     }
 
-    // Invoke the user-provided closure to solve for `f(T_k) * e_1`.
+    // Invoke the user-provided closure to solve for `f(T_k) * e_1`. This is the
+    // coefficient vector for the solution in the Lanczos basis, without the final scaling.
     let y_k_prime = f_tk_solver(
         &standard_output.decomposition.alphas,
         &standard_output.decomposition.betas,
@@ -85,25 +70,23 @@ where
         .into());
     }
 
-    // Scale the result by the norm of the initial vector `b` to get the final `y_k`.
-    let y_k = &y_k_prime * Scale(T::from_real_impl(&standard_output.decomposition.b_norm));
-
     // --- SOLUTION RECONSTRUCTION ---
     // Pre-allocate the destination vector `x_k` for the final result.
     // This gives us explicit control over the memory allocation.
     let mut x_k = Mat::<T>::zeros(standard_output.v_k.nrows(), 1);
 
-    // Use the explicit `matmul` function instead of the `*` operator.
+    // Use the explicit `matmul` function to compute x_k = V_k * y_k_prime * ||b||.
     // This function writes the result directly into the pre-allocated `x_k`
-    // without performing any intermediate allocations for the output.
-    // This prevents the temporary memory spike observed in the experiments.
+    // without performing any intermediate allocations. The scaling by ||b|| is
+    // handled efficiently by the `alpha` parameter of `matmul`, avoiding an
+    // extra allocation for the scaled coefficient vector.
     matmul(
         x_k.as_mut(),
-        Accum::Replace, // Overwrite the destination: x_k = alpha * V_k * y_k
-        standard_output.v_k.as_ref(), // lhs
-        y_k.as_ref(),   // rhs
-        T::one_impl(),  // alpha = 1.0
-        Par::Seq,       // Use sequential execution for consistency
+        Accum::Replace,
+        standard_output.v_k.as_ref(),
+        y_k_prime.as_ref(),
+        T::from_real_impl(&standard_output.decomposition.b_norm),
+        Par::Seq,
     );
 
     Ok(x_k)
