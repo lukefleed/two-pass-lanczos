@@ -313,28 +313,38 @@ The memory management is identical to that of the first pass. We use each vector
 
 
 \subsection{Computational and Memory Complexity}
-We now provide an analysis of the memory requirements and computational cost of the two-pass Lanczos algorithm \ref{alg:two_pass_lanczos}. Our analysis demonstrates that the method achieves a significant reduction in memory usage at the expense of an increased number of floating-point operations.
+We now provide a formal analysis of the memory requirements and computational cost of the two-pass Lanczos algorithm. To formalize this analysis, we model the total peak memory usage, $M(n, k)$, as a function of the problem dimension $n$ and the number of iterations $k$. This total memory can be decomposed into a base cost required for problem representation and an additional cost specific to the algorithm's execution:
+\begin{equation}
+    M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k).
+    \label{eq:memory_model}
+\end{equation}
+The base component, $M_{\text{base}}(n)$, is common to both algorithms. It includes the memory for storing the sparse matrix $\mathbf{A}$ and a constant number of work vectors. The term $M_{\text{alg}}(n, k)$ represents the additional memory specific to each algorithm's execution strategy, which is the source of the substantial difference between the two methods.
 
 \begin{proposition}[Memory Complexity]
-    Let $n$ be the dimension of the matrix $\mathbf{A}$ and $k$ be the number of iterations. The standard one-pass Lanczos algorithm requires $O(nk)$ memory for the basis vectors. The two-pass Lanczos algorithm reduces this requirement to $O(n)$.
+    Let $n$ be the dimension of the matrix $\mathbf{A}$ and $k$ be the number of iterations. The standard one-pass Lanczos algorithm has a memory complexity of $O(nk)$, while the two-pass variant reduces this requirement to $O(n)$.
 \end{proposition}
-
 \begin{proof}
-    The standard one-pass Lanczos method must store the entire basis matrix $\mathbf{V}_k = [\mathbf{v}_1, \dots, \mathbf{v}_k] \in \mathbb{C}^{n \times k}$ to synthesize the final solution $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$. The storage for this matrix is of size $nk$, leading to a memory complexity of $O(nk)$ \cite{golub2013matrix}.
+    The base memory component, $M_{\text{base}}(n)$, includes storage for the sparse matrix $\mathbf{A} \in \mathbb{R}^{n \times n}$ and a constant number of work vectors, $c_v$, each of dimension $n$. Let $\text{nnz}(\mathbf{A})$ be the number of non-zero entries in $\mathbf{A}$, and let $s_d$ be the size of a double-precision float. The storage for $\mathbf{A}$ in a Compressed Sparse Column (CSC) format requires approximately $s_d(\text{nnz}(\mathbf{A}) + n) + s_i(\text{nnz}(\mathbf{A}))$, where $s_i$ is the size of an integer index. For the class of sparse problems considered, $\text{nnz}(\mathbf{A}) \propto n$. The base memory cost is therefore strictly linear in $n$, so $M_{\text{base}}(n) = O(n)$.
 
-    We contrast this with the requirements of the two-pass algorithm. During the first pass, the computation of $\mathbf{v}_{j+1}$ at any step $j$ of the recurrence relation \eqref{eq:lanczos_recurrence} depends only on the vectors $\mathbf{v}_j$ and $\mathbf{v}_{j-1}$. Therefore, the number of $n$-dimensional vectors that we must hold simultaneously in memory is a small constant, independent of the iteration count $j$. The memory for these vectors is $O(n)$. The second pass has analogous requirements, as it employs the same recurrence. The total memory complexity is therefore dominated by the storage for a few $n$-dimensional vectors, which amounts to $O(n)$. We must also store the scalar coefficients, but this only adds an $O(k)$ term, which is negligible for $k \ll n$.
+    The difference between the methods lies in the algorithm-specific term, $M_{\text{alg}}(n, k)$. The standard one-pass algorithm must store the entire basis matrix $\mathbf{V}_k \in \mathbb{R}^{n \times k}$ to synthesize the final solution. This imposes a significant memory overhead:
+    \begin{equation}
+        M_{\text{alg, std}}(n, k) = n \cdot k \cdot s_d = O(nk).
+    \end{equation}
+    The total memory is therefore $M_{\text{std}}(n, k) = M_{\text{base}}(n) + M_{\text{alg, std}}(n, k) = O(n) + O(nk) = O(nk)$ \cite{golub2013matrix}.
+
+    The two-pass algorithm is designed to minimize this term. It stores only the scalar coefficients of $\mathbf{T}_k$, resulting in a negligible cost of $M_{\text{alg, TP}}(k) = O(k)$. The total memory requirement is thus:
+    $$M_{\text{TP}}(n, k) = M_{\text{base}}(n) + M_{\text{alg, TP}}(k) = O(n) + O(k)$$
+    Under the common assumption that $n \gg k$, this simplifies to $O(n)$.
 \end{proof}
 
 \begin{proposition}[Computational Complexity]
-    Let the dominant computational cost of the Lanczos process be the matrix-vector products. For $k$ iterations, the standard one-pass Lanczos algorithm requires $k$ matrix-vector products. The two-pass algorithm requires $2k$ matrix-vector products.
+    Let the dominant computational cost of the Lanczos process be the matrix-vector products. For $k$ iterations, the standard one-pass Lanczos algorithm requires $k$ matrix-vector products, whereas the two-pass algorithm requires $2k$.
 \end{proposition}
-
 \begin{proof}
-    The primary computational cost per iteration for a large, sparse matrix $\mathbf{A}$ is the matrix-vector product $\mathbf{A}\mathbf{v}_j$. The standard one-pass method performs one such product per iteration, resulting in a total of $k$ matrix-vector products.
+    For large, sparse matrices, the matrix-vector product $\mathbf{A}\mathbf{v}_j$ is the most computationally expensive operation per iteration \cite[Chap. 6]{saad2003iterative}. The standard one-pass method performs one such product at each of its $k$ iterations, for a total of $k$ products.
 
-    The two-pass method, by its design, executes two separate passes. The first pass requires $k$ matrix-vector products to generate the coefficients of $\mathbf{T}_k$. To synthesize the solution, the second pass must re-generate the Lanczos basis vectors, which forces us to re-compute the same sequence of $k$ matrix-vector products. This brings the total number of matrix-vector products to $2k$.
+    The two-pass method executes two distinct passes. The first pass requires $k$ matrix-vector products to generate the coefficients of $\mathbf{T}_k$. To synthesize the solution, the second pass must re-generate the Lanczos basis vectors, which forces the re-computation of the same sequence of $k$ matrix-vector products. The total count is therefore $2k$.
 \end{proof}
-
 % \subsection{Alternative Methods}
 % We contextualize the two-pass method by comparing it to an alternative strategy for achieving memory efficiency: the derivation of short-term recurrences for the solution vector itself. For certain specific choices of the function $f$, it is possible to algebraically manipulate the underlying Lanczos process to yield a direct update formula for the approximate solution $\mathbf{x}_k$.
 
@@ -361,10 +371,6 @@ We defined a set of quantitative metrics. The primary measure of computational w
 We measure the accuracy of a computed solution $x_k$ by its relative error with respect to a known ground-truth solution $x_{\text{true}}$. We assess the stability of the basis generation by quantifying the loss of orthogonality of the Lanczos basis $V_k$ via the Frobenius norm $\|I - V_k^H V_k\|_F$, a known phenomenon in finite-precision implementations of the process \cite{golub2013matrix}. For the stability experiment, we also measure the numerical deviation, or \emph{drift}, between the standard basis $V_k$ and the re-generated basis $V'_k$, as well as the drift in the scalar recurrence coefficients. We evaluate the ultimate impact by the relative difference between the final solution vectors obtained from the one-pass and two-pass methods.
 
 \subsection{Test Problem Generation}
-
-% We derive our test problems from the Karush-Kuhn-Tucker (KKT) systems...
-% GIUSTIFICAZIONE: Questa è una dichiarazione di metodologia, che descrive l'origine dei problemi di test.
-% La struttura a blocchi è standard per i sistemi KKT in ottimizzazione.
 We derive our test problems from Karush-Kuhn-Tucker (KKT) systems associated with convex quadratic separable Min-Cost Flow problems. Such systems are sparse, symmetric, and exhibit the block saddle-point structure
 \begin{equation}
     A =
@@ -373,82 +379,18 @@ We derive our test problems from Karush-Kuhn-Tucker (KKT) systems associated wit
         E & 0
     \end{pmatrix} \in \mathbb{R}^{n \times n}.
 \end{equation}
-% We construct the node-arc incidence matrix, E...
-% GIUSTIFICAZIONE: Descrizione dell'implementazione pratica (contenuta in `src/utils/data_loader.rs`).
-% La sparsità di E è una proprietà intrinseca delle matrici di incidenza dei grafi.
 We construct the node-arc incidence matrix, $E$, from network topologies generated by the \texttt{netgen} utility, which allows for precise control over problem dimension and sparsity. The diagonal block $D$ is defined as $D = \text{diag}(d_1, \dots, d_m)$, with its entries drawn from a uniform random distribution, $d_i \sim U[1, C_D]$.
 
-% This construction allows us to control key mathematical properties of A.
-% GIUSTIFICAZIONE: Questa frase introduce la logica metodologica che segue.
-This construction allows us to control key properties of $A$.
-% First, by setting d_i >= 1, we ensure that D is a symmetric positive definite matrix,
-% as all its eigenvalues are positive.
-% GIUSTIFICAZIONE: Una matrice simmetrica è definita positiva se e solo se tutti i suoi autovalori sono positivi.
-% Per una matrice diagonale, gli autovalori sono gli elementi sulla diagonale.
-% Poiché d_i >= 1, sono tutti positivi. Fonte: [golub2013matrix, Sec. 8.1].
-First, by setting $d_i \ge 1$, we ensure that $D$ is a symmetric positive definite matrix, as all its eigenvalues are positive.
-% This choice is critical because it guarantees that the resulting KKT matrix A is indefinite.
-% The indefiniteness can be directly verified...
-% GIUSTIFICAZIONE: Una matrice simmetrica A è indefinita se la forma quadratica x^T*A*x assume sia valori positivi
-% che negativi. La dimostrazione che segue è una prova costruttiva basata su principi primi.
-This choice is critical because it guarantees that the resulting KKT matrix $A$ is indefinite. The indefiniteness can be directly verified by examining the quadratic form $x^T A x$: vectors of the form $[x_1^T, 0]^T$ with $x_1 \neq 0$ can yield positive values since $x_1^T D x_1 > 0$, while other choices of $x$ can lead to non-positive values.
-% Operating on indefinite matrices provides a robust test for the Lanczos algorithm, which is formulated
-% for general symmetric matrices and does not require positive definiteness \cite{golub2013matrix}.
-% GIUSTIFICAZIONE: L'algoritmo di Lanczos (es. Algoritmo 10.1.1 in [golub2013matrix]) richiede solo la simmetria
-% della matrice per funzionare e produrre una matrice T tridiagonale simmetrica. La positività definita
-% non è un'ipotesi necessaria per il processo, a differenza di metodi come il Gradiente Coniugato.
-Operating on indefinite matrices provides a robust test for the Lanczos algorithm, which is formulated for general symmetric matrices and does not require positive definiteness \cite{golub2013matrix}.
+This construction allows us to control key properties of $A$. First, by setting $d_i \ge 1$, we ensure that $D$ is a symmetric positive definite matrix, as all its eigenvalues are positive. This choice guarantees that the resulting KKT matrix $A$ is indefinite. The indefiniteness can be directly verified by examining the quadratic form $x^T A x$: vectors of the form $[x_1^T, 0]^T$ with $x_1 \neq 0$ yield positive values since $x_1^T D x_1 > 0$, while other choices of $x$ can lead to non-positive values. Operating on indefinite matrices provides a robust test for the Lanczos algorithm. The process, as formulated for general symmetric matrices, does not require positive definiteness, a property that distinguishes it from methods such as the Conjugate Gradient algorithm \cite[Sec. 10.3]{golub2013matrix}.
 
-% Second, the parameter C_D gives us control over the spectral properties of the problem.
-% GIUSTIFICAZIONE: Introduce la seconda principale ragione metodologica.
-Second, the parameter $C_D$ gives us control over the spectral properties of the problem.
-% For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest
-% to its smallest eigenvalue, kappa_2(D) = lambda_max(D) / lambda_min(D) \cite{saad2003iterative}.
-% GIUSTIFICAZIONE: Questa è la definizione standard del numero di condizionamento spettrale per matrici simmetriche.
-% Fonte: [saad2003iterative, Chap. 2].
-For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest to its smallest eigenvalue, $\kappa_2(D) = \lambda_{\max}(D) / \lambda_{\min}(D)$ \cite{saad2003iterative}.
-% Our construction thus yields kappa_2(D) approx C_D.
-% GIUSTIFICAZIONE: Deriva direttamente dalla definizione, poiché lambda_max(D) sarà vicino a C_D e lambda_min(D) sarà vicino a 1.
-Our construction thus yields $\kappa_2(D) \approx C_D$.
-% The spectral properties of the operator are known to fundamentally govern the convergence
-% rate of the Lanczos process \cite{golub2013matrix}.
-% GIUSTIFICAZIONE: Affermazione generale ma fondamentale. La teoria della convergenza dei metodi di Krylov lega
-% l'errore alla migliore approssimazione polinomiale sullo spettro della matrice. Questo è il tema
-% centrale di [golub2013matrix, Sec. 10.1.5].
-The spectral properties of the operator are known to fundamentally govern the convergence rate of the Lanczos process \cite{golub2013matrix}.
-% By varying C_D, we can therefore generate both well-conditioned and ill-conditioned problem instances.
-% GIUSTIFICAZIONE: Conclusione logica dei punti precedenti. Se C_D controlla il condizionamento di un blocco
-% e questo influenza lo spettro globale, allora C_D ci permette di modulare la difficoltà del problema.
-By varying $C_D$, we can therefore generate both well-conditioned and ill-conditioned problem instances.
-% Using a uniform random distribution... ensures that our test instances are generic and not biased...
-% GIUSTIFICAZIONE: Questa è una giustificazione metodologica standard per garantire l'imparzialità
-% e la riproducibilità degli esperimenti, evitando casi patologici o artificialmente semplici.
-Using a uniform random distribution for the entries of $D$ ensures that our test instances are generic and not biased toward an artificially simple spectral structure.
+Second, the parameter $C_D$ gives us control over the spectral properties of the problem. For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest to its smallest eigenvalue, $\kappa_2(D) = \lambda_{\max}(D) / \lambda_{\min}(D)$ \cite[Chap. 2]{saad2003iterative}. Our construction thus yields $\kappa_2(D) \approx C_D$. The spectral properties of the operator are known to fundamentally govern the convergence rate of Krylov subspace methods. The error in the Lanczos approximation is closely tied to the problem of best polynomial approximation on the spectrum of the matrix, a central theme in the analysis of the method \cite[Sec. 10.1.5]{golub2013matrix}. By varying $C_D$, we can therefore generate both well-conditioned and ill-conditioned problem instances. Using a uniform random distribution for the entries of $D$ ensures that our test instances are generic and not biased toward an artificially simple spectral structure.
 
-% To permit the exact computation of solution error, we adopt a known-solution methodology...
-% \cite{saad2003iterative}.
-% GIUSTIFICAZIONE: Questa pratica è lo standard de facto nella letteratura sui metodi iterativi, come si
-% evince dagli esempi e dalle analisi in testi di riferimento come [saad2003iterative].
 To permit the exact computation of solution error, we adopt a known-solution methodology. We first define a ground-truth solution vector $x_{\text{true}}$ and then construct the right-hand side vector as $b := A x_{\text{true}}$.
 
-% To assess the robustness of the approach, we conduct experiments using two functions...
-% GIUSTIFICAZIONE: Introduce la scelta delle funzioni di test.
-To assess the robustness of the approach, we conduct experiments using two functions, $f$, chosen for their distinct analytical properties.
-% The first is the matrix exponential, f(z) = exp(z). As an entire function, it is a canonical
-% and well-behaved test case... \cite{frommer2008matrix}.
-% GIUSTIFICAZIONE: [frommer2008matrix, Sec. 4] è interamente dedicato all'esponenziale di matrice,
-% stabilendone la centralità come oggetto di studio.
-The first is the matrix exponential, $f(z) = \exp(z)$. As an entire function, it is a canonical and well-behaved test case for algorithms computing matrix functions \cite{frommer2008matrix}.
-% The Lanczos process itself is independent of f. Using a smooth function...
-% GIUSTIFICAZIONE: La derivazione del processo di Lanczos in [golub2013matrix, Sec. 10.1] mostra che la costruzione
-% di V_k e T_k dipende solo da A e dal vettore iniziale, non da f. f interviene solo nel calcolo finale f(T_k).
-The Lanczos process itself is independent of $f$. Using a smooth function like the exponential therefore allows a clear analysis of the algorithm's intrinsic properties, such as the stability of the basis re-generation, without confounding factors from singularities in $f$.
+To assess the robustness of the approach, we conduct experiments using two functions, $f$, chosen for their distinct analytical properties. The first is the matrix exponential, $f(z) = \exp(z)$. As an entire function, it is a canonical and well-behaved test case for algorithms computing matrix functions \cite{frommer2008matrix}. The Lanczos process itself is independent of $f$. Using a smooth function like the exponential therefore allows a clear analysis of the algorithm's intrinsic properties, such as the stability of the basis re-generation, without confounding factors from singularities in $f$.
 
-% The second function is the inverse, f(z) = z^{-1}... The convergence of Krylov methods for this problem
-% is highly sensitive to the eigenvalues of A near zero... \cite{saad2003iterative}.
-% GIUSTIFICAZIONE: L'intero libro [saad2003iterative] è dedicato a questo problema. La sensibilità agli autovalori
-% piccoli è discussa in dettaglio nel contesto del Gradiente Coniugato [saad2003iterative, Sec. 6.11.3].
-The second function is the inverse, $f(z) = z^{-1}$, which recasts our problem as the solution of the linear system $Ax = b$. We select this function to evaluate the algorithm in the presence of a singularity at the origin. The convergence of Krylov methods for this problem is highly sensitive to the eigenvalues of $A$ near zero, making it an essential and challenging test case for numerical robustness, particularly for the indefinite KKT systems we employ \cite{saad2003iterative}.
+The second function is the inverse, $f(z) = z^{-1}$, which recasts our problem as the solution of the linear system $Ax = b$. We select this function to evaluate the algorithm in the presence of a singularity at the origin. The convergence of Krylov methods for this problem is highly sensitive to the eigenvalues of $A$ near zero, making it an essential and challenging test case for numerical robustness \cite[Sec. 6.11.3]{saad2003iterative}.
+
 
 \subsection{Experiment 1: Memory and Computation Trade-off}
 The first experiment was designed to empirically validate the theoretical complexity analysis of the two-pass method. The objective was to demonstrate that it maintains a constant memory footprint with respect to the iteration count, unlike the linear growth of the one-pass method, at the cost of a doubled computational workload. The experiment was conducted by selecting a large, fixed-size matrix $\mathbf{A}$ and executing both algorithms on the same problem instance, varying the number of iterations $k$ across a predefined range. For each value of $k$, we recorded the peak RSS and the total wall-clock time. We expected that a plot of peak RSS versus $k$ would exhibit a linear profile for the one-pass algorithm and a constant profile for the two-pass algorithm, consistent with their respective $O(nk)$ and $O(n)$ memory complexities. Furthermore, we anticipated that the wall-clock time for the two-pass method would be approximately double that of the one-pass method. However, we will see that the actual timing far deviates from this expectation due to memory access patterns and cache effects.
@@ -511,6 +453,7 @@ This effect becomes even more pronounced for the small-scale instance with 5k ar
     \caption{Performance results for a small-scale problem instance (5k arcs). The left panel shows peak memory usage, while the right panel shows wall-clock time.}
     \label{fig:small_scale}
 \end{figure}
+
 
 \subsection{Experiment 2: Scalability}
 The second experiment assesses how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, we fix the number of iterations $k$ to a constant value, and generate a family of test matrices of increasing dimension $n$. The network topologies are constructed to maintain a constant ratio of arcs to nodes, ensuring comparable sparsity across all instances. For each problem size, we execute both algorithms and record their peak RSS and total wall-clock time. We expect the results to show that the memory advantage of the two-pass algorithm becomes increasingly significant as $n$ grows. Specifically, a plot of peak RSS versus $n$ should show a substantially steeper slope for the one-pass method than for the two-pass method.
