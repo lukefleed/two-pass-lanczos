@@ -49,7 +49,7 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\title{The Two-Pass Lanczos Method}
+\title{A Memory-Efficient Two-Pass Lanczos Algorithm}
 \author{Luca Lombardo}
 \date{}
 
@@ -60,14 +60,7 @@
 \maketitle
 
 \begin{abstract}
-    % Outline for the abstract.
-    % State the problem: computing f(A)b for large, sparse Hermitian matrices.
-    % Introduce Krylov subspace methods as the standard approach.
-    % Identify the core challenge: the prohibitive memory cost of storing the Lanczos basis vectors.
-    % Introduce the two-pass Lanczos method as a memory-efficient variant that addresses this challenge.
-    % State the fundamental trade-off: the method exchanges reduced memory for an increased computational workload.
-    % Conclude by positioning it as a simple and robust alternative to standard one-pass implementations, applicable to a general class of matrix functions.
-    % \lipsum[1]
+    \noindent This work investigates the two-pass Lanczos algorithm for computing matrix functions $f(\mathbf{A})\mathbf{b}$. We analyze its memory and computational complexities, showing a reduction in memory from $O(nk)$ to $O(n)$ at the cost of doubling matrix-vector products. Numerical experiments validate this model. The observed wall-clock time demonstrates that while computational work increases, actual performance can be comparable to, or even exceed, the one-pass method in memory-bound scenarios due to favorable cache utilization. Furthermore, the two-pass algorithm maintains numerical accuracy and stability equivalent to the standard approach, even for challenging ill-conditioned problems.
 \end{abstract}
 
 {\setlength{\parskip}{0em}
