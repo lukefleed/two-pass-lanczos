@@ -67,7 +67,7 @@
     % Introduce the two-pass Lanczos method as a memory-efficient variant that addresses this challenge.
     % State the fundamental trade-off: the method exchanges reduced memory for an increased computational workload.
     % Conclude by positioning it as a simple and robust alternative to standard one-pass implementations, applicable to a general class of matrix functions.
-    \lipsum[1]
+    % \lipsum[1]
 \end{abstract}
 
 {\setlength{\parskip}{0em}
@@ -273,7 +273,7 @@ As we re-generate each vector $\mathbf{v}_j$, we immediately use it to form the 
 \end{equation}
 The memory management is identical to that of the first pass. We use each vector $\mathbf{v}_j$ to compute $\mathbf{v}_{j+1}$ and to update the sum for $\mathbf{x}_k$. Afterwards, we retain it only as long as required for the next step of the recurrence. After $k$ steps, the accumulation is complete. The procedure is formally described in Algorithm \ref{alg:two_pass_lanczos}.
 
-\begin{algorithm}[h]
+\begin{algorithm}[ht!]
     \caption{The Two-Pass Lanczos Method for $\mathbf{x} = f(\mathbf{A})\mathbf{b}$}
     \label{alg:two_pass_lanczos}
     \begin{algorithmic}
@@ -312,7 +312,7 @@ The memory management is identical to that of the first pass. We use each vector
 \end{algorithm}
 
 
-\subsection{Computational and Memory Complexity}
+\subsection{Computational and Memory Complexity} \label{sec:complexity}
 We now provide a formal analysis of the memory requirements and computational cost of the two-pass Lanczos algorithm. To formalize this analysis, we model the total peak memory usage, $M(n, k)$, as a function of the problem dimension $n$ and the number of iterations $k$. This total memory can be decomposed into a base cost required for problem representation and an additional cost specific to the algorithm's execution:
 \begin{equation}
     M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k).
@@ -391,18 +391,19 @@ To assess the robustness of the approach, we conduct experiments using two funct
 
 The second function is the inverse, $f(z) = z^{-1}$, which recasts our problem as the solution of the linear system $Ax = b$. We select this function to evaluate the algorithm in the presence of a singularity at the origin. The convergence of Krylov methods for this problem is highly sensitive to the eigenvalues of $A$ near zero, making it an essential and challenging test case for numerical robustness \cite[Sec. 6.11.3]{saad2003iterative}.
 
+\subsection{Experiment 1: Memory and Computation Trade-off} \label{sec:exp1}
+The first experiment was designed to empirically validate the theoretical complexity analysis presented in Section \ref{sec:complexity}. The goal was to demonstrate the trade-off between memory consumption and computational workload by comparing the one-pass and two-pass Lanczos algorithms.
 
-\subsection{Experiment 1: Memory and Computation Trade-off}
-The first experiment was designed to empirically validate the theoretical complexity analysis of the two-pass method. The objective was to demonstrate that it maintains a constant memory footprint with respect to the iteration count, unlike the linear growth of the one-pass method, at the cost of a doubled computational workload. The experiment was conducted by selecting a large, fixed-size matrix $\mathbf{A}$ and executing both algorithms on the same problem instance, varying the number of iterations $k$ across a predefined range. For each value of $k$, we recorded the peak RSS and the total wall-clock time. We expected that a plot of peak RSS versus $k$ would exhibit a linear profile for the one-pass algorithm and a constant profile for the two-pass algorithm, consistent with their respective $O(nk)$ and $O(n)$ memory complexities. Furthermore, we anticipated that the wall-clock time for the two-pass method would be approximately double that of the one-pass method. However, we will see that the actual timing far deviates from this expectation due to memory access patterns and cache effects.
+Based on our model, we formulate two distinct hypotheses. First, concerning memory usage, we expect the peak resident set size of the standard algorithm to exhibit linear growth with respect to the iteration count $k$, consistent with its $O(nk)$ complexity derived from storing the basis $\mathbf{V}_k$. Conversely, we expect the two-pass method to maintain a nearly constant memory footprint, consistent with its $O(n)$ complexity. Second, regarding computational time, the model based on floating-point operations predicts that the wall-clock time for the two-pass method should be approximately double that of the one-pass method, due to the doubled number of matrix-vector products. However, this model neglects the cost of memory access. A more realistic hypothesis is that the actual performance will be governed by the relation between the additional arithmetic operations and the algorithms' memory access patterns. For problem sizes where the basis matrix $\mathbf{V}_k$ is too large to fit in processor caches, the cost of memory bandwidth may dominate, reducing the observable time penalty for the two-pass method.
+
+We conducted this experiment by selecting fixed-size matrices $\mathbf{A}$ of varying dimensions and executing both algorithms, varying the number of iterations $k$ across a predefined range. For each value of $k$, we recorded the peak RSS and the total wall-clock time.
 
 \subsubsection{Results}
-We executed both algorithms on test instances of small, medium, and large dimensions. For each instance, we varied the number of iterations, $k$, and recorded the Peak Resident Set Size and the total wall-clock time.
-
 The memory consumption results, presented in the left panels of Figures \ref{fig:large_scale}, \ref{fig:medium_scale}, and \ref{fig:small_scale}, confirm the complexity analysis across all problem scales. The standard one-pass algorithm exhibits a linear growth in memory usage with respect to the iteration count $k$. This behavior stems directly from the need to store the entire basis matrix $\mathbf{V}_k \in \mathbb{C}^{n \times k}$, a requirement with a cost of $O(nk)$ \cite{golub2013matrix}. In contrast, the two-pass algorithm maintains a constant memory footprint, independent of $k$. This aligns with its theoretical $O(n)$ memory complexity, as the algorithm only requires simultaneous storage for a small, constant number of $n$-dimensional vectors.
 
-The analysis of wall-clock time, however, reveals a more complex behavior than the simplified theoretical model suggests. For the large-scale instance with 500k arcs, shown in Figure \ref{fig:large_scale} (right panel), the wall-clock time of the two-pass method is only marginally greater than that of the one-pass method. Their execution time ratio remains close to unity, approximately $1.1$. This observation appears to contradict the theoretical expectation that the two-pass method should perform nearly twice the work \cite{frommer2008matrix}. The discrepancy arises because for very large $n$, the dominant computational cost shifts from the sparse matrix-vector products to the dense vector operations for solution reconstruction. Both the final matrix-vector product $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ in the one-pass method and the incremental accumulation in the two-pass method have a complexity of $O(nk)$. When the matrix $\mathbf{V}_k$ is too large to fit in any CPU cache, these operations become fundamentally limited by the system's main memory bandwidth. This large, common cost term dominates the total execution time for both methods and masks the effect of the doubled sparse matrix-vector products.
+A closer analysis of Figure \ref{fig:medium_scale} (a), however, reveals a subtler dynamic. For a low number of iterations, the memory consumption of the two-pass method is slightly higher than that of the standard method, with a crossover point observed around $k \approx 300$. This phenomenon does not contradict the theoretical model but rather clarifies the constants it abstracts. Our model, $M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k)$, remains valid, but the base cost, $M_{\text{base}}(n)$, is not identical for the two algorithms. The two-pass method incurs a slightly larger fixed memory overhead. This overhead arises from the need to store a copy of the initial vector $\mathbf{b}$ for the second pass, as well as the arrays for the scalar coefficients $\{\alpha_j\}$, $\{\beta_j\}$, and the solution vector $\mathbf{y}_k$. For small values of $k$, the storage cost for the basis in the standard method, $O(nk)$, is less than this fixed overhead. As $k$ increases, however, the $O(nk)$ term rapidly dominates.
 
-\begin{figure}[h]
+\begin{figure}[h!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
@@ -418,9 +419,9 @@ The analysis of wall-clock time, however, reveals a more complex behavior than t
     \label{fig:large_scale}
 \end{figure}
 
-As we reduce the problem dimension, this dynamic changes. For the medium-scale instance with 50k arcs, the results in Figure \ref{fig:medium_scale} (right panel) show that the two-pass method is consistently faster than the standard one-pass method. This performance reversal comes from the memory access patterns of the algorithms. The standard algorithm's reconstruction step accesses a large contiguous block of memory for $\mathbf{V}_k$, generating an inefficient access pattern with poor data locality that leads to a high rate of cache misses. The two-pass algorithm, by contrast, operates on a small working set of vectors at each step. The processor's cache hierarchy manages this small working set effectively, resulting in a high cache hit rate and superior performance.
+For the large-scale instance with 500k arcs, shown in Figure \ref{fig:large_scale} (right panel), the wall-clock time of the two-pass method is only marginally greater than that of the one-pass method. This observation appears to contradict the expectation of doubled work \cite{frommer2008matrix}. The discrepancy arises because for very large $n$, the dominant cost shifts from sparse matrix-vector products to dense vector operations during solution reconstruction. Both the final matrix-vector product $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ in the one-pass method and the incremental accumulation in the two-pass method have a complexity of $O(nk)$. When $\mathbf{V}_k$ is too large to fit in any CPU cache, these operations become limited by main memory bandwidth. This large, common cost term dominates the total execution time for both methods and masks the effect of the doubled sparse matrix-vector products.
 
-\begin{figure}[h]
+\begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
@@ -436,9 +437,9 @@ As we reduce the problem dimension, this dynamic changes. For the medium-scale i
     \label{fig:medium_scale}
 \end{figure}
 
-This effect becomes even more pronounced for the small-scale instance with 5k arcs, shown in Figure \ref{fig:small_scale} (right panel). Here, the working set of the two-pass method can reside almost entirely within the fastest L1 and L2 caches, maximizing its performance advantage. In this cache-friendly regime, the performance gain from eliminating cache misses far outweighs the cost of the additional matrix-vector products. These results demonstrate that the algorithmic structure of the two-pass method, designed for memory efficiency, can yield an unexpected but significant advantage in computational speed by aligning more effectively with the memory architecture of modern processors.
+As we reduce the problem dimension, this dynamic changes. For the medium-scale instance with 50k arcs, the results in Figure \ref{fig:medium_scale} (right panel) show that the two-pass method is consistently faster than the standard one-pass method. This performance reversal originates from the memory access patterns of the algorithms. The standard algorithm's reconstruction step accesses a large contiguous block of memory for $\mathbf{V}_k$, generating an inefficient access pattern with poor data locality that leads to a high rate of cache misses. The two-pass algorithm, by contrast, operates on a small working set of vectors at each step. The processor's cache hierarchy manages this small working set effectively, resulting in a high cache hit rate and superior performance.
 
-\begin{figure}[h]
+\begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
@@ -454,15 +455,15 @@ This effect becomes even more pronounced for the small-scale instance with 5k ar
     \label{fig:small_scale}
 \end{figure}
 
+This effect becomes even more pronounced for the small-scale instance with 5k arcs, shown in Figure \ref{fig:small_scale} (right panel). Here, the working set of the two-pass method can reside almost entirely within the fastest L1 and L2 caches, maximizing its performance advantage. In this cache-friendly regime, the performance gain from eliminating cache misses far outweighs the cost of the additional matrix-vector products.
 
 \subsection{Experiment 2: Scalability}
-The second experiment assesses how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, we fix the number of iterations $k$ to a constant value, and generate a family of test matrices of increasing dimension $n$. The network topologies are constructed to maintain a constant ratio of arcs to nodes, ensuring comparable sparsity across all instances. For each problem size, we execute both algorithms and record their peak RSS and total wall-clock time. We expect the results to show that the memory advantage of the two-pass algorithm becomes increasingly significant as $n$ grows. Specifically, a plot of peak RSS versus $n$ should show a substantially steeper slope for the one-pass method than for the two-pass method.
+The second experiment assesses how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, we fix the number of iterations $k$ to a constant value and generate a family of test matrices of increasing dimension. The network topologies are constructed to maintain a comparable sparsity across all instances. We hypothesize that the memory advantage of the two-pass algorithm will become increasingly significant as $n$ grows, which should manifest as a substantially steeper slope in the memory usage plot for the one-pass method compared to the two-pass method.
 
 \subsubsection{Results}
-
 We fixed the number of iterations at $k=500$ and analyzed the performance of both algorithms as a function of the problem dimension, $n$. Figure \ref{fig:scalability} plots the peak memory usage and wall-clock time against $n$.
 
-\begin{figure}[H]
+\begin{figure}[h!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
@@ -478,53 +479,34 @@ We fixed the number of iterations at $k=500$ and analyzed the performance of bot
     \label{fig:scalability}
 \end{figure}
 
-The memory consumption profiles in Figure \ref{fig:scalability} (a) show a stark contrast between the two methods. To formalize this analysis, we model the total peak memory usage, $M(n, k)$, as a function of the problem dimension $n$ and the number of iterations $k$. This total memory can be decomposed into a base cost required for problem representation and an additional cost specific to the algorithm's execution:
-\begin{equation}
-    M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k).
-\end{equation}
-The base component, $M_{\text{base}}(n)$, is common to both algorithms. It includes the memory for storing the sparse KKT matrix $\mathbf{A} \in \mathbb{R}^{n \times n}$ and a constant number of work vectors, $c_v$, each of dimension $n$. Let $\text{nnz}(\mathbf{A})$ be the number of non-zero entries in $\mathbf{A}$, and let $s_d$ be the size of a double-precision float. The storage for $\mathbf{A}$ in a Compressed Sparse Column (CSC) format requires approximately $s_d(\text{nnz}(\mathbf{A}) + n) + s_i(\text{nnz}(\mathbf{A}))$, where $s_i$ is the size of an integer index. For our problem instances, $\text{nnz}(\mathbf{A}) \propto n$. Therefore, the base memory cost is strictly linear in $n$:
-\begin{equation}
-    M_{\text{base}}(n) = (c_A + c_v s_d)n + O(1),
-\end{equation}
-where $c_A$ is a constant related to the storage of the sparse matrix.
+The memory consumption profiles in Figure \ref{fig:scalability} (a) show a stark contrast between the two methods, confirming our hypothesis. The memory usage of both methods grows linearly with $n$, but the slope of this growth differs significantly. The two-pass method exhibits a gentle slope, corresponding to the linear growth of the base memory requirement, $M_{\text{base}}(n)$. The standard method, in contrast, shows a much steeper slope, reflecting the combined cost of the base memory and the algorithm-specific term for storing the basis, $M_{\text{std}}(n,k) = M_{\text{base}}(n) + M_{\text{alg, std}}(n, k)$.
 
-The substantial difference between the methods lies in the algorithm-specific term, $M_{\text{alg}}(n, k)$. The two-pass algorithm is designed to minimize this term by storing only the scalar coefficients of $\mathbf{T}_k$, resulting in a negligible cost of $M_{\text{alg, TP}}(k) = O(k)$. In contrast, the standard one-pass algorithm must store the entire basis matrix $\mathbf{V}_k \in \mathbb{R}^{n \times k}$, which imposes a significant memory overhead:
-\begin{equation}
-    M_{\text{alg, std}}(n, k) = n \cdot k \cdot s_d.
-\end{equation}
-With $k$ fixed, the asymptotic memory complexities for the two methods are therefore:
-\begin{align}
-    M_{\text{TP}}(n)    & = M_{\text{base}}(n) + O(k) \approx c_{\text{base}} \cdot n                             \\
-    M_{\text{std}}(n,k) & = M_{\text{base}}(n) + (k \cdot s_d) \cdot n = (c_{\text{base}} + k \cdot s_d) \cdot n.
-\end{align}
-This model predicts that the memory usage of both methods should grow linearly with $n$, but the slope of the growth for the standard method should exceed that of the two-pass method by a constant factor of $k \cdot s_d$.
+In Table \ref{tab:scalability_data} we provide the raw data underlying Figure \ref{fig:scalability}
+. The memory usage of the two-pass method provides a stable empirical baseline for $M_{\text{base}}(n)$. The final column in the table, representing the difference in memory consumption, effectively isolates the cost of storing the basis matrix $\mathbf{V}_k$, which corresponds to the term $M_{\text{alg, std}}(n, k)$. A linear regression performed on this column's data yields an empirical growth rate of approximately $3.97$ MB per 1000 units of increase in $n$, which corresponds to 4065 bytes per unit $n$. This empirical rate aligns remarkably well with the theoretical rate predicted by our model, which is $k \cdot s_d = 500 \cdot 8 = 4000$ bytes per unit $n$.
 
-The empirical data presented in Table \ref{tab:scalability_data} aligns with our model. The memory usage of the two-pass method provides a stable empirical baseline for $M_{\text{base}}(n)$. The last column, representing the term $M_{\text{alg, std}}(n, k)$, isolates the cost of storing the basis matrix $\mathbf{V}_k$. A linear regression performed on this column yields an empirical growth rate of approximately $3968$ bytes per unit increase in $n$. This is in line with the theoretical rate of $k \cdot s_d = 500 \cdot 8 = 4000$ bytes per unit $n$.
-
-\begin{table}[H]
+\begin{table}[ht!]
     \centering
     \begin{tabular}{rrrr}
         \hline
         \multicolumn{1}{c}{\textbf{Dimension ($n$)}} & \multicolumn{1}{c}{\textbf{Standard (MB)}} & \multicolumn{1}{c}{\textbf{Two-Pass (MB)}} & \multicolumn{1}{c}{\textbf{Difference (MB)}} \\
         \hline
-        50,365                                       & 997.1                                      & 806.1                                      & 191.0                                        \\
-        100,516                                      & 1193.8                                     & 812.6                                      & 381.2                                        \\
-        150,632                                      & 1392.6                                     & 882.0                                      & 510.6                                        \\
-        200,730                                      & 1587.5                                     & 884.2                                      & 703.3                                        \\
-        250,816                                      & 1784.3                                     & 833.2                                      & 951.1                                        \\
-        300,894                                      & 1985.0                                     & 965.1                                      & 1019.9                                       \\
-        350,966                                      & 2180.4                                     & 963.4                                      & 1217.0                                       \\
-        401,033                                      & 2374.5                                     & 1097.5                                     & 1277.0                                       \\
-        451,095                                      & 2571.2                                     & 860.7                                      & 1710.5                                       \\
-        501,155                                      & 2767.9                                     & 867.6                                      & 1900.3                                       \\
+        50,365                                       & 6798.4                                     & 6352.3                                     & 446.1                                        \\
+        100,516                                      & 6739.9                                     & 6419.7                                     & 320.2                                        \\
+        150,632                                      & 6938.8                                     & 6428.2                                     & 510.6                                        \\
+        200,730                                      & 7133.7                                     & 6430.4                                     & 703.3                                        \\
+        250,816                                      & 7330.5                                     & 6435.8                                     & 894.7                                        \\
+        300,894                                      & 7531.2                                     & 6447.3                                     & 1083.9                                       \\
+        350,966                                      & 7726.6                                     & 6395.8                                     & 1330.8                                       \\
+        401,033                                      & 7920.7                                     & 6451.8                                     & 1468.9                                       \\
+        451,095                                      & 8117.4                                     & 6457.1                                     & 1660.3                                       \\
+        501,155                                      & 8314.1                                     & 6526.4                                     & 1787.7                                       \\
         \hline
     \end{tabular}
     \caption{Peak memory usage (RSS) in megabytes for a fixed number of iterations ($k=500$). The difference isolates the memory cost of the basis matrix $\mathbf{V}_k$ in the standard algorithm.}
     \label{tab:scalability_data}
 \end{table}
 
-
-The wall-clock time for both algorithms, shown in Figure \ref{fig:scalability} (b), scales linearly with the problem dimension $n$. This is consistent with the theoretical cost, which is dominated by $k$ iterations of operations (sparse matrix-vector products and vector additions) whose complexity is linear in $n$. With $k$ held constants, the total time complexity is $O(nk)$, resulting in the observed linear scaling.
+The wall-clock time for both algorithms, shown in Figure \ref{fig:scalability} (b), scales linearly with the problem dimension $n$. This is consistent with the theoretical cost, which is dominated by $k$ iterations of operations (such as sparse matrix-vector products) whose complexity is linear in $n$. With $k$ held constant, the total time complexity is $O(nk)$, resulting in the observed linear scaling. The execution times for both methods remain close, which is consistent with the findings from \ref{sec:exp1} for large-scale problems where memory bandwidth becomes a significant factor in overall performance.
 
 \subsection{Experiment 3: Numerical Accuracy and Stability Analysis}
 In our final experiment, we investigate the numerical accuracy and stability of the two-pass Lanczos method. Our primary objective is to empirically verify that the solution computed via basis regeneration is numerically equivalent to the solution from the standard one-pass algorithm across a range of distinct scenarios. To achieve this, we move beyond relative performance metrics and measure the absolute error of each method against a known, analytically computed ground-truth solution. This approach allows us to answer two fundamental questions: what is the absolute accuracy of the Lanczos approximation for a given problem, and does the two-pass method maintain this accuracy, or does the process of regenerating the basis vectors introduce a significant numerical degradation?
@@ -551,7 +533,7 @@ Figure \ref{fig:exp_well_cond} displays the results for the matrix exponential o
 
 Figure \ref{fig:inv_well_cond} presents the case for the matrix inverse on a well-conditioned, positive definite matrix. The convergence is linear, appearing as a straight line on the log-linear scale, and the error decreases monotonically until it stagnates at the level of machine precision. This behaviour is consistent with the classical convergence theory for the Lanczos method applied to linear systems \cite{saad2003iterative}. Again, the two methods produce nearly identical error curves, and their direct deviation is negligible, reinforcing the conclusion that the two-pass approach does not compromise numerical accuracy on well-posed problems.
 
-\begin{figure}[h]
+\begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
@@ -572,7 +554,7 @@ The experiments on ill-conditioned spectra reveal a more complex dynamic. In Fig
 
 Figure \ref{fig:inv_ill_cond} illustrates the most challenging scenario: the matrix inverse on a nearly singular, indefinite matrix. The error plot shows the three phases predicted by the theory. Initially, for small $k$, the error stagnates as the Krylov subspace fails to capture the problematic near-null space of $\mathbf{A}$. Subsequently, as the Lanczos process begins to approximate the near-zero eigenvalue, the projected matrix $\mathbf{T}_k$ becomes severely ill-conditioned. This induces a period of erratic, non-monotonic error behaviour, as the inversion of $\mathbf{T}_k$ becomes numerically unstable \cite{golub2013matrix}. Critically, this instability affects both methods identically. Finally, as $k$ becomes sufficiently large, the finite-termination property of the Lanczos method for linear systems comes into effect \cite{saad2003iterative}. The Krylov subspace becomes rich enough to construct a highly accurate polynomial approximant for $z^{-1}$, and the error converges abruptly to a high level of precision. Throughout this entire process, from stagnation to instability to convergence, the solutions from the one-pass and two-pass methods remain numerically close.
 
-\begin{figure}[h]
+\begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
