@@ -668,7 +668,7 @@ mod tests {
     fn test_recurrence_step_correctness() {
         let (a, _) = setup_simple_problem();
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
         let v_curr: Mat<f64> = mat![[1.0], [0.0], [0.0], [0.0]];
         let v_prev: Mat<f64> = Mat::zeros(4, 1);
@@ -681,7 +681,7 @@ mod tests {
             v_curr.as_ref(),
             v_prev.as_ref(),
             beta_prev,
-            &mut stack,
+            stack,
         );
 
         let beta = beta_option.unwrap();
@@ -695,9 +695,9 @@ mod tests {
         let b: Mat<f64> = mat![[1.0], [0.0]];
         let k = 2;
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None).unwrap();
+        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None).unwrap();
         assert_eq!(result.decomposition.steps_taken, 1);
     }
 
@@ -706,8 +706,8 @@ mod tests {
         let a: Mat<f64> = Mat::identity(2, 2);
         let b: Mat<f64> = Mat::zeros(2, 1);
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
-        assert!(lanczos_standard(&a, b.as_ref(), 2, &mut stack, None).is_err());
+        let stack = MemStack::new(&mut mem);
+        assert!(lanczos_standard(&a, b.as_ref(), 2, stack, None).is_err());
     }
 
     // --- PROPERTY TESTS (RUNNERS) ---
@@ -722,10 +722,10 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let b = Mat::from_fn(n, 1, |_, _| rng.random());
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
-        let pass_one_output = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
+        let pass_one_output = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, stack)?;
 
         ensure!(
             standard_output.decomposition.steps_taken == pass_one_output.steps_taken,
@@ -774,10 +774,10 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let b = Mat::from_fn(n, 1, |_, _| rng.random());
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
-        let result_k = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
-        let result_k_plus_1 = lanczos_standard(&a.as_ref(), b.as_ref(), k + 1, &mut stack, None)?;
+        let result_k = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
+        let result_k_plus_1 = lanczos_standard(&a.as_ref(), b.as_ref(), k + 1, stack, None)?;
 
         let v_k = result_k.v_k.as_ref();
         let beta_k = result_k_plus_1.decomposition.betas[k - 1];
@@ -820,9 +820,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let b = Mat::from_fn(n, 1, |_, _| rng.random());
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
         let v_k_standard = standard_output.v_k.as_ref();
         let steps = standard_output.decomposition.steps_taken;
         let identity = Mat::<f64>::identity(steps, steps);
@@ -846,22 +846,17 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let b = Mat::from_fn(n, 1, |_, _| rng.random());
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut mem);
+        let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
         let v_k_ref = standard_output.v_k;
         let steps = standard_output.decomposition.steps_taken;
 
-        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, stack)?;
         let y_k = Mat::from_fn(steps, 1, |i, _| 0.1 * (i + 1) as f64);
 
-        let pass_two_output = lanczos_pass_two_with_basis(
-            &a.as_ref(),
-            b.as_ref(),
-            &decomp,
-            y_k.as_ref(),
-            &mut stack,
-        )?;
+        let pass_two_output =
+            lanczos_pass_two_with_basis(&a.as_ref(), b.as_ref(), &decomp, y_k.as_ref(), stack)?;
         let v_k_regenerated = pass_two_output.v_k;
 
         let drift = (v_k_ref - v_k_regenerated).squared_norm_l2();

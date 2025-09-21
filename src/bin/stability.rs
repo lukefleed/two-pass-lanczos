@@ -20,6 +20,12 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::Serialize;
 use std::path::PathBuf;
 
+/// Type alias for matrix function f(z).
+type MatrixFunctionType = Box<dyn Fn(f64) -> f64>;
+
+/// Type alias for T_k solver function.
+type TkSolverType = Box<dyn Fn(&[f64], &[f64]) -> Result<Mat<f64>>>;
+
 /// The matrix function `f` to be approximated in the experiment.
 #[derive(ValueEnum, Clone, Debug, Copy)]
 enum MatrixFunction {
@@ -245,10 +251,7 @@ fn main() -> Result<()> {
     let mut rng = StdRng::seed_from_u64(42);
     let b = Mat::from_fn(args.n, 1, |_, _| rng.random());
 
-    let (f, f_tk_solver): (
-        Box<dyn Fn(f64) -> f64>,
-        Box<dyn Fn(&[f64], &[f64]) -> Result<Mat<f64>>>,
-    ) = match args.function {
+    let (f, f_tk_solver): (MatrixFunctionType, TkSolverType) = match args.function {
         MatrixFunction::Exp => (Box::new(|z| z.exp()), Box::new(exp_tk_solver)),
         MatrixFunction::Inv => (Box::new(|z| 1.0 / z), Box::new(inv_tk_solver)),
     };
