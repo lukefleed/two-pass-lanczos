@@ -24,7 +24,7 @@ enum CostLevel {
 
 impl CostLevel {
     /// Returns the string representation required by the external tools.
-    fn to_arg_str(&self) -> &'static str {
+    fn to_arg_str(self) -> &'static str {
         match self {
             CostLevel::Low => "b",
             CostLevel::High => "a",
@@ -45,7 +45,7 @@ enum Scaling {
 
 impl Scaling {
     /// Returns the string representation required by the external tools.
-    fn to_arg_str(&self) -> &'static str {
+    fn to_arg_str(self) -> &'static str {
         match self {
             Scaling::Scaled => "s",
             Scaling::NotScaled => "ns",

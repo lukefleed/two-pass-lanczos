@@ -174,7 +174,7 @@ fn exp_tk_solver(alphas: &[f64], betas: &[f64]) -> Result<Mat<f64>> {
         steps,
         |i, j| if i == j { d_lambda[i].exp() } else { 0.0 },
     );
-    let f_t_k = &q_tk * &f_d * q_tk.adjoint();
+    let f_t_k = q_tk * &f_d * q_tk.adjoint();
     let mut e1 = Mat::zeros(steps, 1);
     e1.as_mut()[(0, 0)] = 1.0;
     Ok(&f_t_k * &e1)
@@ -188,23 +188,23 @@ fn assemble_tridiagonal_sparse(alphas: &[f64], betas: &[f64]) -> Result<SparseCo
         return Ok(SparseColMat::new(symbolic, vec![]));
     }
     let mut triplets = Vec::with_capacity(3 * steps - 2);
-    for i in 0..steps {
+    for (i, &alpha) in alphas.iter().enumerate() {
         triplets.push(Triplet {
             row: i,
             col: i,
-            val: alphas[i],
+            val: alpha,
         });
     }
-    for i in 0..steps - 1 {
+    for (i, &beta) in betas.iter().enumerate() {
         triplets.push(Triplet {
             row: i,
             col: i + 1,
-            val: betas[i],
+            val: beta,
         });
         triplets.push(Triplet {
             row: i + 1,
             col: i,
-            val: betas[i],
+            val: beta,
         });
     }
     SparseColMat::try_new_from_triplets(steps, steps, &triplets)
@@ -265,9 +265,9 @@ fn main() -> Result<()> {
             continue;
         }
         log::info!("Running for k = {}...", k);
-        let mut stack = MemStack::new(&mut stack_mem);
+        let stack = MemStack::new(&mut stack_mem);
 
-        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, &mut stack, &*f_tk_solver) {
+        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, stack, &*f_tk_solver) {
             Ok(x) => x,
             Err(_) => {
                 log::warn!("Standard Lanczos failed at k={}. Stopping.", k);
@@ -275,14 +275,14 @@ fn main() -> Result<()> {
             }
         };
 
-        let x_k_two_pass =
-            match lanczos_two_pass(&a.as_ref(), b.as_ref(), k, &mut stack, &*f_tk_solver) {
-                Ok(x) => x,
-                Err(_) => {
-                    log::warn!("Two-pass Lanczos failed at k={}. Stopping.", k);
-                    break;
-                }
-            };
+        let x_k_two_pass = match lanczos_two_pass(&a.as_ref(), b.as_ref(), k, stack, &*f_tk_solver)
+        {
+            Ok(x) => x,
+            Err(_) => {
+                log::warn!("Two-pass Lanczos failed at k={}. Stopping.", k);
+                break;
+            }
+        };
 
         // 3. Compute and store metrics.
         results.push(AccuracyResult {
