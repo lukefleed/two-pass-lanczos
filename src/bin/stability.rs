@@ -1,10 +1,10 @@
 //! Experiment Runner for the Numerical Stability and Accuracy Analysis.
 //!
-//! This executable conducts a rigorous analysis of the Lanczos algorithms by
+//! This executable conducts an analysis of the Lanczos algorithms by
 //! comparing their computed solutions against a known analytical "ground truth".
 //! It evaluates both the standard one-pass and the memory-efficient two-pass
 //! variants to demonstrate their numerical equivalence and accuracy across four
-//! distinct, scientifically-motivated scenarios.
+//! distinct problem scenarios.
 
 use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
@@ -107,6 +107,7 @@ fn create_diagonal_problem(
     match (func, scenario) {
         (MatrixFunction::Exp, ProblemScenario::WellConditioned) => {
             // Eigenvalues on a compact interval, well-suited for exp(z).
+            // Values are in [-10, -0.1] to avoid large exponentials.
             for i in 0..n {
                 let val = -10.0 + (9.9 / (n - 1).max(1) as f64) * i as f64;
                 eigs.push(val);
@@ -114,6 +115,7 @@ fn create_diagonal_problem(
         }
         (MatrixFunction::Exp, ProblemScenario::IllConditioned) => {
             // A very wide spectrum, making polynomial approximation difficult for exp(z).
+            // Values are in [-1000, -0.1].
             for i in 0..n {
                 let val = -1000.0 + (999.9 / (n - 1).max(1) as f64) * i as f64;
                 eigs.push(val);
@@ -121,6 +123,7 @@ fn create_diagonal_problem(
         }
         (MatrixFunction::Inv, ProblemScenario::WellConditioned) => {
             // A positive definite spectrum, well-conditioned for inversion.
+            // Values are in [0.1, 100].
             for i in 0..n {
                 let val = 0.1 + (99.9 / (n - 1).max(1) as f64) * i as f64;
                 eigs.push(val);
@@ -128,6 +131,7 @@ fn create_diagonal_problem(
         }
         (MatrixFunction::Inv, ProblemScenario::IllConditioned) => {
             // An indefinite, quasi-singular spectrum, ill-conditioned for inversion.
+            // Values are in [-1, -0.1] U [0.1, 1], with one eigenvalue very close to zero.
             let mid = n / 2;
             for i in 0..n {
                 let val = if i < mid {
@@ -153,7 +157,8 @@ fn create_diagonal_problem(
     (a, eigs)
 }
 
-/// Solver for `f(T_k) * e_1` where `f(z) = z^-1`.
+/// Solver for $f(\mathbf{T}_k)\mathbf{e}_1$ where $f(z) = z^{-1}$.
+/// This solves the system $\mathbf{T}_k \mathbf{y}' = \mathbf{e}_1$. Since $\mathbf{T}_k$ is small and tridiagonal, a sparse LU decomposition is extremely efficient ($O(k)$) and numerically stable.
 fn inv_tk_solver(alphas: &[f64], betas: &[f64]) -> Result<Mat<f64>> {
     let steps = alphas.len();
     if steps == 0 {
@@ -165,7 +170,9 @@ fn inv_tk_solver(alphas: &[f64], betas: &[f64]) -> Result<Mat<f64>> {
     Ok(t_k_sparse.as_ref().sp_lu()?.solve(e1.as_ref()))
 }
 
-/// Solver for `f(T_k) * e_1` where `f(z) = exp(z)`.
+/// Solver for $f(\mathbf{T}_k)\mathbf{e}_1$ where $f(z) = \exp(z)$.
+/// Since $\mathbf{T}_k$ is symmetric, the matrix exponential is computed via
+/// eigendecomposition: $\exp(\mathbf{T}_k) = \mathbf{Q} \exp(\mathbf{D}) \mathbf{Q}^T$.
 fn exp_tk_solver(alphas: &[f64], betas: &[f64]) -> Result<Mat<f64>> {
     let steps = alphas.len();
     if steps == 0 {
@@ -256,6 +263,11 @@ fn main() -> Result<()> {
         MatrixFunction::Inv => (Box::new(|z| 1.0 / z), Box::new(inv_tk_solver)),
     };
 
+    // Compute the analytical ground-truth solution x_true = f(A)b.
+    // Since A is diagonal with eigenvalues on the diagonal, f(A) is also diagonal
+    // with f(eigenvalue_i) on the diagonal. For a diagonal matrix, f(A)b simply
+    // scales each component b_i by f(eigenvalue_i), giving us the exact solution
+    // without any approximation error.
     let x_true = Mat::from_fn(args.n, 1, |i, _| f(eigs[i]) * b.as_ref()[(i, 0)]);
     let x_true_norm = x_true.norm_l2();
 
@@ -268,6 +280,8 @@ fn main() -> Result<()> {
             continue;
         }
         log::info!("Running for k = {}...", k);
+        // A fresh memory stack is used for each value of k to ensure that allocations
+        // from one iteration do not interfere with the next
         let stack = MemStack::new(&mut stack_mem);
 
         let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, stack, &*f_tk_solver) {

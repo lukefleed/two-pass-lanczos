@@ -1,9 +1,16 @@
-//! Experiment Runner for the Memory-Computation Trade-off Analysis (Experiment 1).
+//! Experiment Runner for Memory-Computation Trade-off Analysis.
 //!
-//! This executable acts as an orchestrator for the trade-off experiment. When run,
-//! it spawns isolated child processes for each Lanczos variant (`standard`, `two-pass`)
-//! to ensure accurate, independent memory measurements. The main process then
-//! collects and consolidates the results into a single CSV file.
+//! This executable employs an orchestrator/worker architecture to empirically validate
+//! the theoretical trade-offs between the one-pass and two-pass Lanczos algorithms.
+//! When run, the main process acts as an "orchestrator," which spawns isolated child
+//! processes ("workers") for each Lanczos variant.
+//!
+//! This design is crucial for accurate memory profiling. By running each variant in a
+//! separate process, we can reliably measure its Peak Resident Set Size (RSS) without
+//! interference from the orchestrator's memory footprint or other concurrent tasks.
+//! The orchestrator communicates with workers via an environment variable and collects
+//! results by parsing the workers' standard output.
+
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use faer::{
@@ -25,8 +32,6 @@ use std::{
 };
 
 /// Defines command-line arguments that are common to all experiments.
-/// By placing them in this shared module, we ensure consistency and avoid
-/// code duplication across the different runner executables.
 #[derive(Parser, Debug)]
 pub struct CommonArgs {
     /// Path to the directory containing the test instance files.
@@ -91,8 +96,9 @@ fn find_file_by_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     Err(anyhow!("No .{} file found in directory {:?}", ext, dir))
 }
 
-/// A helper function to assemble a sparse `faer::SparseColMat` from the Lanczos coefficients.
-/// This uses the triplet representation for efficient sparse matrix construction.
+/// A helper function to assemble a sparse [`faer::SparseColMat`] from the Lanczos coefficients.
+/// This uses a triplet representation for efficient sparse matrix construction, which is
+/// then used to solve the projected system with a sparse LU decomposition.
 fn assemble_tridiagonal_sparse(alphas: &[f64], betas: &[f64]) -> Result<SparseColMat<usize, f64>> {
     let steps = alphas.len();
     if steps == 0 {
@@ -159,6 +165,8 @@ fn run_orchestrator() -> Result<()> {
     for variant in &variants_to_run {
         log::info!("Spawning worker for variant: {variant:?}");
         let current_exe = std::env::current_exe()?;
+        // The worker is the same executable, but with an environment variable set.
+        // It inherits all command-line arguments from the orchestrator.
         let child = Command::new(current_exe)
             .args(std::env::args_os().skip(1))
             .env(
@@ -188,6 +196,7 @@ fn run_orchestrator() -> Result<()> {
             ));
         }
 
+        // The worker's stdout contains CSV data; deserialize it.
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(output.stdout.as_slice());
@@ -218,26 +227,33 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
     let args = TradeoffArgs::parse();
     log::info!("Worker for {variant:?} started.");
 
+    // Load the KKT system from the specified directory.
     let dmx_path = find_file_by_extension(&args.common.instance_dir, "dmx")?;
     let qfc_path = find_file_by_extension(&args.common.instance_dir, "qfc")?;
     let kkt_system = load_kkt_system(dmx_path, qfc_path)?;
     let a: &SparseColMat<usize, f64> = &kkt_system.a;
 
+    // Create a ground-truth solution x_true and corresponding right-hand side b = A * x_true.
+    // We construct a known solution x_true with unit norm (||x_true||_2 = 1) where each component
+    // equals 1/sqrt(n).
     let n = a.nrows();
     let x_true = Mat::<f64>::from_fn(n, 1, |_, _| 1.0 / (n as f64).sqrt());
     let b = a * &x_true;
 
+    // This worker will write its results to stdout for the orchestrator to capture.
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
 
-    // This closure now uses the highly efficient sparse LU solver from faer.
+    // For this experiment, we solve a linear system (f(z)=z^-1) using a sparse LU
+    // decomposition on the tridiagonal matrix T_k. This is an O(k) operation.
     let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>> {
         let t_k_sparse = assemble_tridiagonal_sparse(alphas, betas)?;
         if t_k_sparse.nrows() == 0 {
             return Ok(Mat::zeros(0, 1));
         }
 
+        // e1 is the first standard basis vector.
         let mut e1 = Mat::zeros(t_k_sparse.nrows(), 1);
         e1.as_mut()[(0, 0)] = 1.0;
 

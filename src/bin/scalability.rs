@@ -1,16 +1,16 @@
-//! Experiment Runner for the Scalability Analysis (Experiment 2).
+//! Experiment Runner for Scalability Analysis.
 //!
-//! This executable orchestrates the scalability experiment. The primary process,
-//! the "orchestrator," iterates through a range of problem sizes. For each size,
-//! it first invokes the `datagen` binary to generate the required KKT system files.
-//! It then spawns isolated "worker" child processes for each Lanczos variant
-//! (`standard`, `two-pass`) to run the computation and measure performance.
+//! This executable orchestrates the scalability experiment by employing an
+//! orchestrator/worker process model. The main process, the "orchestrator," iterates
+//! through a range of problem sizes (`n`). For each size, it first invokes the
+//! `datagen` binary to generate the required KKT system files. It then spawns
+//! isolated "worker" child processes for each Lanczos variant (`standard`, `two-pass`)
+//! to run the computation and measure performance.
 //!
-//! This orchestrator/worker model is crucial for obtaining accurate memory
-//! measurements (Peak RSS), as each worker runs in a separate process,
-//! preventing its memory usage from being conflated with that of the orchestrator
-//! or other workers. The orchestrator captures the single-row CSV output from
-//! each worker and aggregates all results into a final CSV file.
+//! By isolating each computational task in a separate process, we ensure that its
+//! memory usage is not conflated with that of the orchestrator or other workers.
+//! Communication is handled via environment variables (to assign roles) and stdout
+//! (for workers to report results).
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
@@ -33,13 +33,15 @@ use std::{
     time::Instant,
 };
 
-/// Environment variable to differentiate between orchestrator and worker processes.
-/// If this is set, the process runs in worker mode for the specified variant.
+/// Environment variable used for orchestrator/worker process differentiation.
+/// Its presence and value determine if the current process executes as a worker
+/// for a specific Lanczos variant.
 const VARIANT_ENV_VAR: &str = "LANCZOS_SCALABILITY_VARIANT";
 /// Maximum number of attempts to generate a valid instance for each problem size.
+/// This provides robustness against stochastic failures in the external `netgen` tool.
 const MAX_DATAGEN_ATTEMPTS: u32 = 5;
 
-/// Defines the Lanczos algorithm variant to be run in a worker process.
+/// Defines the Lanczos algorithm variant to be executed in a worker process.
 #[derive(ValueEnum, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
 #[serde(rename_all = "kebab-case")]
 enum LanczosVariant {
@@ -57,16 +59,16 @@ struct ScalabilityArgs {
     /// The fixed number of Lanczos iterations (k) to use for all runs.
     #[clap(long)]
     k_fixed: usize,
-    /// The starting number of arcs for the generated network problems.
+    /// The starting number of arcs for the generated network problems, defining the initial problem size.
     #[clap(long)]
     arcs_start: usize,
     /// The ending number of arcs for the generated network problems.
     #[clap(long)]
     arcs_end: usize,
-    /// The step size for increasing the number of arcs.
+    /// The step size for increasing the number of arcs between runs.
     #[clap(long)]
     arcs_step: usize,
-    /// The rho parameter for the `datagen` utility, controlling problem structure.
+    /// The rho parameter for the `datagen` utility, controlling problem topology.
     #[clap(long)]
     rho: u32,
     /// Path to the output CSV file for storing aggregated results.
@@ -74,10 +76,10 @@ struct ScalabilityArgs {
     output: PathBuf,
 }
 
-/// Command-line arguments for the isolated worker processes.
+/// Command-line arguments parsed by the isolated worker processes.
 #[derive(Parser, Debug)]
 struct WorkerArgs {
-    /// The path to the directory containing the instance data for this specific run.
+    /// The path to the directory containing the instance data files (.dmx, .qfc).
     #[clap(long)]
     instance_dir: PathBuf,
     /// The fixed number of Lanczos iterations (k) to use.
@@ -85,8 +87,8 @@ struct WorkerArgs {
     k_fixed: usize,
 }
 
-/// Represents a single row of data in the final output CSV.
-/// This struct captures the result from a single worker run.
+/// Represents the data contract between a worker and the orchestrator.
+/// Each worker serializes one instance of this struct to stdout as a single CSV row.
 #[derive(Debug, Serialize, Deserialize)]
 struct ScalabilityResult {
     variant: LanczosVariant,
@@ -96,10 +98,11 @@ struct ScalabilityResult {
     rss_kb: u64,
 }
 
-/// Main entry point.
+/// Main entry point: dispatches to orchestrator or worker logic.
 ///
-/// The logic dispatches to either the orchestrator or a worker based on the
-/// presence of the `LANCZOS_SCALABILITY_VARIANT` environment variable.
+/// This function acts as a dispatcher. It checks for the presence of the
+/// `LANCZOS_SCALABILITY_VARIANT` environment variable to determine the process's role.
+/// If the variable is set, it runs as a worker; otherwise, it runs as the orchestrator.
 fn main() -> Result<()> {
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Info)
@@ -115,13 +118,11 @@ fn main() -> Result<()> {
     }
 }
 
-/// Orchestrator logic.
+/// Orchestrator logic for managing the experiment lifecycle.
 ///
-/// This function iterates through the specified range of problem sizes (`arcs`),
-/// calls `datagen` to create the test problems, and then spawns worker processes
-/// to execute the Lanczos algorithms and collect performance data.
-/// Results are written to the output CSV file incrementally to ensure data is
-/// saved even if a run fails mid-way through the experiment.
+/// This function iterates through problem sizes, generates data for each, and then
+/// spawns worker processes for each algorithm variant. Results are written to the
+/// output CSV file incrementally.
 fn run_orchestrator() -> Result<()> {
     let args = ScalabilityArgs::parse();
     log::info!("Orchestrator starting scalability experiment...");
@@ -134,6 +135,7 @@ fn run_orchestrator() -> Result<()> {
 
         let instance_dir = PathBuf::from(format!("data/scalability/arcs_{arcs}_rho_{}", args.rho));
 
+        // Generate and validate the instance, with built-in retry logic.
         let generation_result =
             generate_and_validate_instance(arcs, args.rho, &instance_dir, MAX_DATAGEN_ATTEMPTS);
 
@@ -148,17 +150,17 @@ fn run_orchestrator() -> Result<()> {
             }
             Err(e) => {
                 log::error!(
-                    "An unrecoverable error occurred during data generation for {arcs} arcs: {}. Skipping.",
+                    "Unrecoverable error during data generation for {arcs} arcs: {}. Skipping.",
                     e
                 );
                 continue;
             }
         };
 
-        // If we have a valid instance, proceed to spawn workers.
-        let variants_to_run = [LanczosVariant::Standard, LanczosVariant::TwoPass];
-        for &variant in &variants_to_run {
+        // If instance is valid, spawn worker processes for each variant.
+        for &variant in &[LanczosVariant::Standard, LanczosVariant::TwoPass] {
             log::info!("Spawning worker for variant: {variant:?}");
+            // Re-spawn the current executable to run in worker mode.
             let current_exe = std::env::current_exe()?;
             let child = Command::new(current_exe)
                 .arg("--instance-dir")
@@ -167,12 +169,9 @@ fn run_orchestrator() -> Result<()> {
                 .arg(args.k_fixed.to_string())
                 .env(
                     VARIANT_ENV_VAR,
-                    variant
-                        .to_possible_value()
-                        .expect("Variant must have a corresponding clap value")
-                        .get_name(),
+                    variant.to_possible_value().unwrap().get_name(),
                 )
-                .stdout(Stdio::piped())
+                .stdout(Stdio::piped()) // Capture stdout to receive the result.
                 .stderr(Stdio::inherit())
                 .spawn()
                 .with_context(|| format!("Failed to spawn worker for variant {variant:?}"))?;
@@ -180,7 +179,7 @@ fn run_orchestrator() -> Result<()> {
             let output = child.wait_with_output()?;
             if !output.status.success() {
                 log::error!(
-                    "Worker process for variant {:?} on instance {:?} failed with status: {}. Skipping.",
+                    "Worker for {:?} on {:?} failed with status: {}. Skipping.",
                     variant,
                     valid_instance_dir,
                     output.status
@@ -188,10 +187,10 @@ fn run_orchestrator() -> Result<()> {
                 continue;
             }
 
+            // Parse the single-line CSV from the worker's stdout.
             let mut rdr = csv::ReaderBuilder::new()
                 .has_headers(false)
                 .from_reader(output.stdout.as_slice());
-
             if let Some(result) = rdr.deserialize::<ScalabilityResult>().next() {
                 match result {
                     Ok(record) => {
@@ -203,20 +202,13 @@ fn run_orchestrator() -> Result<()> {
                             record.rss_kb
                         );
                         writer.serialize(&record)?;
+                        // Flush after each record to ensure data is saved incrementally.
                         writer.flush()?;
                     }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to parse worker output as CSV: {}. Skipping record.",
-                            e
-                        );
-                    }
+                    Err(e) => log::error!("Failed to parse worker CSV output: {}. Skipping.", e),
                 }
             } else {
-                log::warn!(
-                    "Worker for {:?} produced no output. Skipping record.",
-                    variant
-                );
+                log::warn!("Worker for {:?} produced no output. Skipping.", variant);
             }
         }
     }
@@ -228,11 +220,12 @@ fn run_orchestrator() -> Result<()> {
     Ok(())
 }
 
-/// Generates and validates a test instance, retrying on failure.
+/// Generates and validates a test instance, with a retry mechanism.
 ///
-/// This function encapsulates the logic for calling the `datagen` binary and
-/// then validating the output. If validation fails, it cleans up and retries
-/// up to `max_attempts` times.
+/// This function calls the `datagen` binary and validates its output. The `netgen`
+/// tool sometimes produces invalid DIMACS files with 0-based node indices, which
+/// our loader rejects. This function checks for that specific error and retries with a
+/// different random seed (`instance_id`) if validation fails.
 fn generate_and_validate_instance(
     arcs: usize,
     rho: u32,
@@ -240,15 +233,13 @@ fn generate_and_validate_instance(
     max_attempts: u32,
 ) -> Result<Option<PathBuf>> {
     for attempt in 1..=max_attempts {
-        // Clean up previous attempt's files, if any, and recreate the directory.
         if instance_dir.exists() {
             fs::remove_dir_all(instance_dir)?;
         }
-        fs::create_dir_all(instance_dir)
-            .with_context(|| format!("Failed to create instance directory: {instance_dir:?}"))?;
+        fs::create_dir_all(instance_dir)?;
 
         log::info!(
-            "Invoking datagen (Attempt {}/{}) to generate instance data...",
+            "Invoking datagen (Attempt {}/{}) to generate instance...",
             attempt,
             max_attempts
         );
@@ -258,14 +249,13 @@ fn generate_and_validate_instance(
             .arg(arcs.to_string())
             .arg("--rho")
             .arg(rho.to_string())
+            // Use attempt number as instance ID to effectively change the random seed.
             .arg("--instance-id")
-            .arg(attempt.to_string()) // Use attempt number as instance ID to change the seed.
+            .arg(attempt.to_string())
             .arg("--output-dir")
             .arg(instance_dir)
             .status()
-            .context(
-                "Failed to execute datagen binary. Did you build with `cargo build --release`?",
-            )?;
+            .context("Failed to execute datagen. Did you build with `cargo build --release`?")?;
 
         if !datagen_status.success() {
             log::warn!(
@@ -278,64 +268,46 @@ fn generate_and_validate_instance(
         let dmx_path = match find_file_by_extension(instance_dir, "dmx") {
             Ok(path) => path,
             Err(_) => {
-                log::warn!("Datagen ran but did not produce a .dmx file. Retrying...");
+                log::warn!("Datagen produced no .dmx file. Retrying...");
                 continue;
             }
         };
 
-        match validate_dmx_file(&dmx_path)? {
-            true => {
-                log::info!("Datagen completed successfully with valid output.");
-                return Ok(Some(instance_dir.to_path_buf()));
-            }
-            false => {
-                log::warn!(
-                    "Validation failed for {:?}: found invalid node index. Retrying...",
-                    dmx_path
-                );
-                continue;
-            }
+        if validate_dmx_file(&dmx_path)? {
+            log::info!("Datagen completed with valid output.");
+            return Ok(Some(instance_dir.to_path_buf()));
+        } else {
+            log::warn!(
+                "Validation failed for {:?}: found invalid node index. Retrying...",
+                dmx_path
+            );
+            continue;
         }
     }
-    // If all attempts fail, return None.
     Ok(None)
 }
 
-/// Quickly validates a DMX file to ensure it does not contain invalid (0-based) node indices.
-///
-/// # Returns
-/// `Ok(true)` if the file is valid, `Ok(false)` if an invalid index is found,
-/// or an `Err` if an I/O or parsing error occurs.
+/// Validates a DMX file by checking for invalid (0-based) node indices in arc definitions.
+/// The DIMACS format requires 1-based indexing.
 fn validate_dmx_file(path: &Path) -> Result<bool> {
     let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-
-    for line in reader.lines() {
+    for line in BufReader::new(file).lines() {
         let line = line?;
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() || parts[0] != "a" {
-            continue;
-        }
-
-        // An arc line 'a u v ...' should have at least 3 parts.
-        if parts.len() < 3 {
-            continue;
-        }
-
-        // Check node indices u and v.
-        if parts[1] == "0" || parts[2] == "0" {
-            return Ok(false);
+        if parts.first() == Some(&"a") && parts.len() >= 3 {
+            // Check if either node index is "0".
+            if parts[1] == "0" || parts[2] == "0" {
+                return Ok(false); // Invalid index found.
+            }
         }
     }
-
-    Ok(true)
+    Ok(true) // No invalid indices found.
 }
 
-/// Helper function to find the first file with a given extension in a directory.
+/// Utility to find the first file with a given extension in a directory.
 fn find_file_by_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     let entries =
-        std::fs::read_dir(dir).with_context(|| format!("Failed to read directory: {dir:?}"))?;
-
+        fs::read_dir(dir).with_context(|| format!("Failed to read directory: {dir:?}"))?;
     for entry in entries {
         let path = entry?.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some(ext) {
@@ -345,25 +317,45 @@ fn find_file_by_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     Err(anyhow!("No .{} file found in directory {:?}", ext, dir))
 }
 
-/// Worker logic.
+/// Worker logic for a single experimental run.
 ///
-/// This function runs in an isolated child process. It loads a single KKT system,
-/// runs the specified Lanczos variant for a fixed `k`, measures performance,
-/// and prints a single `ScalabilityResult` to stdout as a CSV row.
+/// This function is the "payload" of the experiment, executed in an isolated process.
+/// It loads a single KKT system, runs the specified Lanczos variant for a fixed `k`,
+/// measures performance (wall-clock time and peak RSS), and prints a single
+/// `ScalabilityResult` to stdout as a CSV row to be captured by the orchestrator.
 fn run_worker(variant: LanczosVariant) -> Result<()> {
     let args = WorkerArgs::parse();
-    log::info!("Worker for {variant:?} started.");
+    log::info!(
+        "Worker for {variant:?} started on instance {:?}.",
+        &args.instance_dir
+    );
 
-    // Load the KKT system from the directory prepared by the orchestrator.
+    // Load the KKT system data.
     let dmx_path = find_file_by_extension(&args.instance_dir, "dmx")?;
     let qfc_path = find_file_by_extension(&args.instance_dir, "qfc")?;
     let kkt_system = load_kkt_system(dmx_path, qfc_path)?;
     let a: &SparseColMat<usize, f64> = &kkt_system.a;
     let n = a.nrows();
 
+    // To evaluate the algorithm, we construct a problem `Ax = b` for which the
+    // exact solution is known a priori. This is achieved by first defining a ground-truth
+    // solution vector `x_true`, and then computing the corresponding right-hand side
+    // vector as `b := A * x_true`. This allows for precise error calculation against a
+    // verifiable reference.
+
+    // We choose `x_true` to be a generic, unit-norm vector. A vector with all equal
+    // components `1.0 / sqrt(n)` is selected because its L2 norm is exactly 1
+    // and it has no zero components, ensuring it is not
+    // pathologically aligned with any specific eigenspace of A.
     let x_true = Mat::<f64>::from_fn(n, 1, |_, _| 1.0 / (n as f64).sqrt());
+
+    // Now, compute the right-hand side `b` that corresponds to our chosen `x_true`. The
+    // resulting pair (A, b) now constitutes a complete test problem with a known solution.
     let b = a * &x_true;
 
+    // Define the solver for the projected problem f(T_k)e_1. For this experiment, we
+    // solve a linear system, so f(z)=z^-1. We use a sparse LU decomposition on the
+    // tridiagonal T_k, which is an efficient O(k) operation.
     let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>> {
         let steps = alphas.len();
         if steps == 0 {
@@ -389,18 +381,15 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
                 val: beta,
             });
         }
-        let t_k_sparse = SparseColMat::try_new_from_triplets(steps, steps, &triplets)
-            .map_err(|e| anyhow!("Failed to construct sparse T_k: {:?}", e))?;
-
+        let t_k_sparse = SparseColMat::try_new_from_triplets(steps, steps, &triplets)?;
         let mut e1 = Mat::zeros(steps, 1);
         e1.as_mut()[(0, 0)] = 1.0;
-
-        let lu = t_k_sparse.as_ref().sp_lu()?;
-        Ok(lu.solve(e1.as_ref()))
+        Ok(t_k_sparse.as_ref().sp_lu()?.solve(e1.as_ref()))
     };
 
     let mut stack_mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
 
+    // Execute the specified Lanczos variant and measure performance.
     let (time_s, rss_kb) = match variant {
         LanczosVariant::Standard => {
             let start_time = Instant::now();
@@ -426,6 +415,7 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
         }
     };
 
+    // Serialize the single result to stdout as a headerless CSV row.
     let mut writer = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
