@@ -378,7 +378,7 @@ This construction allows us to control key properties of $A$. First, by setting 
 
 Second, the parameter $C_D$ gives us control over the spectral properties of the problem. For a symmetric positive definite matrix, the 2-norm condition number is the ratio of its largest to its smallest eigenvalue, $\kappa_2(D) = \lambda_{\max}(D) / \lambda_{\min}(D)$ \cite[Chap. 2]{saad2003iterative}. Our construction thus yields $\kappa_2(D) \approx C_D$. The spectral properties of the operator are known to fundamentally govern the convergence rate of Krylov subspace methods. The error in the Lanczos approximation is closely tied to the problem of best polynomial approximation on the spectrum of the matrix, a central theme in the analysis of the method \cite[Sec. 10.1.5]{golub2013matrix}. By varying $C_D$, we can therefore generate both well-conditioned and ill-conditioned problem instances. Using a uniform random distribution for the entries of $D$ ensures that our test instances are generic and not biased toward an artificially simple spectral structure.
 
-To permit the exact computation of solution error, we adopt a known-solution methodology. We first define a ground-truth solution vector $x_{\text{true}}$ and then construct the right-hand side vector as $b := A x_{\text{true}}$.
+In order to be able to have the exact computation of solution error, we adopt a known-solution methodology. We first define a ground-truth solution vector $x_{\text{true}}$ and then construct the right-hand side vector as $b := A x_{\text{true}}$.
 
 To assess the robustness of the approach, we conduct experiments using two functions, $f$, chosen for their distinct analytical properties. The first is the matrix exponential, $f(z) = \exp(z)$. As an entire function, it is a canonical and well-behaved test case for algorithms computing matrix functions \cite{frommer2008matrix}. The Lanczos process itself is independent of $f$. Using a smooth function like the exponential therefore allows a clear analysis of the algorithm's intrinsic properties, such as the stability of the basis re-generation, without confounding factors from singularities in $f$.
 
@@ -501,7 +501,7 @@ In Table \ref{tab:scalability_data} we provide the raw data underlying Figure \r
 
 The wall-clock time for both algorithms, shown in Figure \ref{fig:scalability} (b), scales linearly with the problem dimension $n$. This is consistent with the theoretical cost, which is dominated by $k$ iterations of operations (such as sparse matrix-vector products) whose complexity is linear in $n$. With $k$ held constant, the total time complexity is $O(nk)$, resulting in the observed linear scaling. The execution times for both methods remain close, which is consistent with the findings from \ref{sec:exp1} for large-scale problems where memory bandwidth becomes a significant factor in overall performance.
 
-\subsection{Experiment 3: Numerical Accuracy and Stability Analysis}
+\subsection{Experiment 3: Numerical Accuracy and Stability Analysis} \label{sec:exp3}
 In our final experiment, we investigate the numerical accuracy and stability of the two-pass Lanczos method. Our primary objective is to empirically verify that the solution computed via basis regeneration is numerically equivalent to the solution from the standard one-pass algorithm across a range of distinct scenarios. To achieve this, we move beyond relative performance metrics and measure the absolute error of each method against a known, analytically computed ground-truth solution. This approach allows us to answer two fundamental questions: what is the absolute accuracy of the Lanczos approximation for a given problem, and does the two-pass method maintain this accuracy, or does the process of regenerating the basis vectors introduce a significant numerical degradation?
 
 To isolate the factors governing algorithmic performance (namely, the analytic properties of the function $f$ and the spectral properties of the operator $\mathbf{A}$), we designed four distinct experimental scenarios. We build these scenarios upon synthetic diagonal test matrices, allowing us to exercise precise control over the problem's characteristics \cite{saad2003iterative}. For a diagonal matrix $\mathbf{A} = \text{diag}(\lambda_1, \dots, \lambda_n)$, we can compute the ground-truth solution $\mathbf{x}_{\text{true}} = f(\mathbf{A})\mathbf{b}$ to machine precision via the element-wise product $(\mathbf{x}_{\text{true}})_i = f(\lambda_i)b_i$. This provides a verifiable, reference against which we measure the relative error of the computed solutions $\mathbf{x}_k$ (one-pass) and $\mathbf{x}'_k$ (two-pass). We also track the direct deviation $\|\mathbf{x}_k - \mathbf{x}'_k\|_2$ to quantify their numerical equivalence.
@@ -563,11 +563,55 @@ Figure \ref{fig:inv_ill_cond} illustrates the most challenging scenario: the mat
     \end{minipage}
 \end{figure}
 
+\subsection{Experiment 4: Analysis of Basis Orthogonality}
+The previous experiment established the numerical equivalence of the final solution vectors. We now complete the analysis by investigating the stability of the basis regeneration process itself. This experiment is designed to measure the loss of orthogonality, a well-known phenomenon in finite-precision implementations of the Lanczos process \cite{golub2013matrix}. While the three-term recurrence guarantees orthogonality in exact arithmetic, rounding errors accumulate and cause a gradual degradation of this property with respect to the more distant vectors in the sequence \cite{frommer2008matrix}.
 
+We use the same four experimental scenarios defined in \ref{sec:exp3} to study how orthogonality loss is affected by different spectral properties. We quantify the degradation using the Frobenius norm of the deviation of $\mathbf{V}_k^H \mathbf{V}_k$ from the identity matrix: $\| \mathbf{I} - \mathbf{V}_k^H \mathbf{V}_k \|_F$ \cite{golub2013matrix}. This metric is computed for both the standard basis $\mathbf{V}_k$, stored during the one-pass algorithm, and the regenerated basis $\mathbf{V}'_k$, recomputed during the second pass.
+
+\subsection{Results}
+Figures \ref{fig:orthogonality_exp_well}, \ref{fig:orthogonality_inv_well}, \ref{fig:orthogonality_exp_ill}, and \ref{fig:orthogonality_inv_ill} present the results of this analysis. The data confirms that the loss of orthogonality increases with the number of iterations, a behavior consistent with the theory of the Lanczos process in finite-precision arithmetic \cite{saad2003iterative}. The degradation is visibly more severe for the ill-conditioned problems (Figures \ref{fig:orthogonality_exp_ill} and \ref{fig:orthogonality_inv_ill}), a phenomenon linked to the convergence of Ritz values to the eigenvalues of $\mathbf{A}$ \cite{golub2013matrix}.
+
+
+The most significant result is the numerical identity of the orthogonality loss profiles for the standard and regenerated bases, observed across all test scenarios. This outcome is a direct consequence of the deterministic nature of the algorithm when executed in finite-precision arithmetic. The second pass reconstructs the basis using the recurrence from Equation \eqref{eq:reconstruction_recurrence}, which is supplied with the exact scalar coefficients $\{\alpha_j, \beta_j\}$ stored during the first pass. Since the sequence of floating-point operations and their respective operands is identical in both the original generation and the regeneration, the resulting basis matrices $\mathbf{V}_k$ and $\mathbf{V}'_k$ are computationally indistinguishable. The two-pass method, therefore, introduces no additional numerical degradation; it precisely replicates the propagation of rounding errors inherent to the one-pass process.
+
+\begin{figure}[ht!]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../results/images/orthogonality_exp_well-conditioned.pdf}
+        \caption{Orthogonality loss for $f(z) = \exp(z)$ on well-conditioned matrix}
+        \label{fig:orthogonality_exp_well}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../results/images/orthogonality_inv_well-conditioned.pdf}
+        \caption{Orthogonality loss for $f(z) = z^{-1}$ on well-conditioned matrix}
+        \label{fig:orthogonality_inv_well}
+    \end{minipage}
+
+    \vspace{0.5cm}
+
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../results/images/orthogonality_exp_ill-conditioned.pdf}
+        \caption{Orthogonality loss for $f(z) = \exp(z)$ on ill-conditioned matrix}
+        \label{fig:orthogonality_exp_ill}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../results/images/orthogonality_inv_ill-conditioned.pdf}
+        \caption{Orthogonality loss for $f(z) = z^{-1}$ on ill-conditioned matrix}
+        \label{fig:orthogonality_inv_ill}
+    \end{minipage}
+\end{figure}
+
+The severe loss of orthogonality observed in Figures \ref{fig:orthogonality_inv_ill} and \ref{fig:orthogonality_exp_ill} for the ill-conditioned inverse problem coincides with the period of erratic error behavior in the corresponding solution accuracy plot (Figure \ref{fig:inv_ill_cond}). This confirms that the instability in the solution is an intrinsic part of the Lanczos method applied to a nearly singular problem, which is reproduced by the two-pass algorithm.
 
 \clearpage
 \bibliographystyle{unsrt}
 \bibliography{ref}
 \nocite{*}
+
+
 
 \end{document}
