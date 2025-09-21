@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Generates a comprehensive accuracy plot for a single Lanczos experiment.
+Generates a accuracy plot for a single Lanczos experiment.
 
 This script takes a CSV file produced by the `accuracy-runner` binary and
 creates a two-panel figure:
@@ -19,7 +19,7 @@ from pathlib import Path
 
 def generate_title(input_filename: str) -> str:
     """
-    Generates a descriptive plot title based on keywords in the filename.
+    Generates a plot title based on keywords in the filename.
     """
     input_filename = input_filename.lower()
     # Use raw strings with LaTeX for mathematical notation
@@ -40,7 +40,7 @@ def generate_title(input_filename: str) -> str:
     return f"Accuracy for {func_part} {cond_part}".strip()
 
 
-def create_comprehensive_plot(input_path: str, output_path: str):
+def create_plot(input_path: str, output_path: str):
     """
     Creates a two-panel figure for a single experiment.
 
@@ -112,7 +112,7 @@ def create_comprehensive_plot(input_path: str, output_path: str):
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(output_path, bbox_inches='tight')
-    print(f"Successfully saved comprehensive plot to: {output_path}")
+    print(f"Successfully saved plot to: {output_path}")
     plt.close(fig)
 
 def main():
@@ -133,7 +133,7 @@ def main():
         help="Path for the output PDF plot file."
     )
     args = parser.parse_args()
-    create_comprehensive_plot(args.input, args.output)
+    create_plot(args.input, args.output)
 
 if __name__ == "__main__":
     main()

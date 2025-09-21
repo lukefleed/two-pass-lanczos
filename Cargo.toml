@@ -38,6 +38,10 @@ path = "src/bin/stability.rs"
 name = "tradeoff"
 path = "src/bin/tradeoff.rs"
 
+[[bin]]
+name = "orthogonality"
+path = "src/bin/orthogonality.rs"
+
 [profile.release]
 # Enable full optimizations.
 opt-level = 3
