@@ -1,6 +1,6 @@
 # Two-Pass Lanczos Implementation
 
-An efficient implementation of the two-pass Lanczos method for solving large-scale linear algebra problems, with detailed numerical analysis and performance benchmarks.
+This document provides an overview of the Two-Pass Lanczos implementation, including compilation instructions, optimization strategies, dependencies, repository structure, data generation, correctness testing, and reproduction of experimental results.
 
 ## Compilation and Optimization
 
@@ -63,9 +63,11 @@ The `build.rs` script automatically generates test suites by scanning the `data/
 
 The generated tests are included at compile time via the `include!` macro, providing validation coverage for all available datasets.
 
+> The build.rs is automatically executed during the build process and does not require manual invocation.
+
 ## Repository Structure
 
-```
+```bash
 two-pass-lanczos/
 ├── Cargo.toml              # Project configuration and dependencies
 ├── build.rs                # Automated test generation
@@ -75,8 +77,7 @@ two-pass-lanczos/
 │   ├── solvers.rs          # Lanczos algorithm implementations
 │   ├── algorithms/         # Lanczos variants and utilities
 │   │   ├── mod.rs
-│   │   ├── lanczos_standard.rs
-│   │   └── lanczos_two_pass.rs
+│   │   ├── lanczos.rs
 │   ├── bin/                # Experiment executables
 │   │   ├── datagen.rs      # Data generation orchestrator
 │   │   ├── scalability.rs  # Performance scaling analysis
@@ -104,12 +105,13 @@ two-pass-lanczos/
 │   └── images/             # Generated plots and figures
 └── tex/                    # LaTeX report documentation
     ├── report.tex
+    ├── report.pdf
     └── ref.bib
 ```
 
 ## Data Generation
 
-The `datagen` binary orchestrates a three-stage pipeline to generate KKT test instances using external tools:
+The `datagen` binary orchestrates a three-stage pipeline to generate KKT test instances using external tools.
 
 ### Usage
 
@@ -124,7 +126,7 @@ cargo run --release --bin datagen -- \
     --output-dir data/custom
 ```
 
-### Parameters
+#### Parameters
 
 - **arcs**: Number of arcs in the generated network
 - **rho**: Structural parameter (1-3) controlling network topology
@@ -133,7 +135,7 @@ cargo run --release --bin datagen -- \
 - **quadratic-cost**: Cost level for quadratic costs (`a` = high, `b` = low)
 - **scaling**: Arc capacity scaling (`s` = scaled, `ns` = not scaled)
 
-### Generation Pipeline
+#### Generation Pipeline
 
 1. **pargen**: Generates parameter file with problem specifications
 2. **netgen**: Creates network topology in DIMACS format (.dmx)
@@ -198,7 +200,7 @@ cargo test netgen_1000 --release
 
 ## Reproducing Experimental Results
 
-The project includes three experimental analyses corresponding to the results in `tex/report.pdf`. Each experiment generates CSV data that is subsequently visualized using Python scripts.
+The project includes three experimental analyses corresponding to the results in `tex/report.pdf`. Each experiment generates CSV data that is then visualized using Python scripts.
 
 ### 1. Memory and Computation Trade-off
 
@@ -257,7 +259,7 @@ python python/plot_tradeoff.py \
     --output-prefix results/images/tradeoff_arcs5k_rho3
 ```
 
-This generates six plots total: memory and time plots for each of the three problem scales, demonstrating the O(nk) vs O(n) memory complexity difference and revealing cache effects in execution time.
+This generates six plots total: memory and time plots for each of the three problem scales.
 
 ### 2. Scalability with Problem Dimension
 
@@ -268,7 +270,7 @@ This experiment measures how memory usage and execution time scale with problem 
 cargo run --release --bin scalability -- \
     --arcs-start 5000 \
     --arcs-end 500000 \
-    --arcs-step 25000 \
+    --arcs-step 5000 \
     --rho 3 \
     --k-fixed 500 \
     --output results/scalability_k500_rho3.csv
@@ -285,18 +287,18 @@ This generates two plots showing memory usage and execution time vs problem dime
 
 ### 3. Numerical Accuracy and Stability Analysis
 
-This experiment provides the most detailed analysis, combining accuracy measurements and orthogonality studies across multiple problem scenarios. It uses two executables (`stability` and `orthogonality`) to generate four distinct experimental configurations.
+This experiment provides accuracy measurements and orthogonality studies across multiple problem scenarios. It uses two executables (`stability` and `orthogonality`) to generate four distinct experimental configurations.
 
 **Problem Scenarios:**
 The analysis tests two matrix functions on two spectral conditions:
 - **Matrix Functions:**
-  - `inv`: Matrix inverse f(z) = z^(-1) (linear system solving)
-  - `exp`: Matrix exponential f(z) = exp(z)
+  - `inv`: Matrix inverse $f(z) = z^{-1}$ (linear system solving)
+  - `exp`: Matrix exponential $f(z) = \exp(z)$
 - **Spectral Conditions:**
   - `well-conditioned`: Eigenvalues well-separated from function singularities
   - `ill-conditioned`: Wide spectrum or eigenvalues near singularities
 
-This creates four combinations: {inv,exp} × {well-conditioned,ill-conditioned}.
+This creates four combinations
 
 **Generate Accuracy Data:**
 ```bash
@@ -423,24 +425,6 @@ python python/plot_orthogonality.py \
 
 **Analysis Details:**
 - **Accuracy Analysis**: Measures the relative error of computed solutions against analytically known ground truth using synthetic diagonal matrices
-- **Orthogonality Analysis**: Quantifies the loss of orthogonality in Lanczos bases via ||I - V_k^H V_k||_F and measures basis drift between standard and regenerated bases
+- **Orthogonality Analysis**: Quantifies the loss of orthogonality in Lanczos bases via $||I - V_k^H V_k||_F$ and measures basis drift between standard and regenerated bases
 - **Well-conditioned cases**: Test baseline algorithm performance under favorable numerical conditions
 - **Ill-conditioned cases**: Stress-test algorithms under challenging spectral conditions including nearly singular matrices and wide eigenvalue spreads
-
-### Complete Experimental Reproduction
-
-To reproduce all results:
-
-```bash
-# Create results directory
-mkdir -p results/images
-
-# Run all experiments (may take several hours)
-./scripts/run_all_experiments.sh  # If available, or execute individual commands above
-
-# Verify all expected output files exist
-ls results/*.csv
-ls results/images/*.pdf
-```
-
-The generated plots correspond directly to the figures referenced in the LaTeX report (`tex/report.tex`) and provide empirical validation of the theoretical analysis presented in the paper.
