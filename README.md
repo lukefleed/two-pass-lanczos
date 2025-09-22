@@ -14,6 +14,25 @@ The project is heavily documented with doc comments, so this will give you a ful
 
 > If you are on Linux the `--open` flag might not work as expected, in that case you can manually open the generated documentation in .html with your browser. The output of the command will tell you where the documentation is located.
 
+The library is structured into two main API layers to serve different use cases:
+
+### High-Level API: The `solvers` Module
+
+The `solvers` module provides the primary, user-facing API. It contains two main functions:
+- `lanczos`: The standard one-pass Lanczos algorithm.
+- `lanczos_two_pass`: The memory-efficient two-pass variant.
+
+These solvers abstract away the internal mechanics of the Lanczos iteration and are the recommended entry point for most applications. They offer a clean interface for computing matrix functions $f(\mathbf{A})\mathbf{b}$ by supplying a closure that solves the small, projected tridiagonal system.
+
+### Low-Level API: The `algorithms` Module
+
+The `algorithms` module exposes the core building blocks of the Lanczos iterations. This API is intended for advanced use cases and testing purposes where fine-grained control is necessary. It allows for:
+- Direct access to intermediate data, such as the Lanczos basis matrix $\mathbf{V}_k$.
+- Implementation of custom logic between the two passes of the two-pass algorithm.
+- Benchmarking specific parts of the algorithm.
+
+While this module is public, for general use, we strongly recommend using the high-level solvers, as they provide a safer and more convenient interface.
+
 ## Compilation and Optimization
 
 ### Building the Project
@@ -91,7 +110,8 @@ two-pass-lanczos/
 │   ├── solvers.rs          # Lanczos algorithm implementations
 │   ├── algorithms/         # Lanczos variants and utilities
 │   │   ├── mod.rs
-│   │   ├── lanczos.rs
+│   │   ├── lanczos.rs      # Standard one-pass Lanczos
+│   │   └── lanczos_two_pass.rs # Memory-efficient two-pass Lanczos
 │   ├── bin/                # Experiment executables
 │   │   ├── datagen.rs      # Data generation orchestrator
 │   │   ├── scalability.rs  # Performance scaling analysis

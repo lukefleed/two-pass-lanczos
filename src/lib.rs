@@ -28,12 +28,9 @@
 //! Lanczos solvers. This problem is equivalent to computing the action of the matrix
 //! function $f(\mathbf{A}) = \mathbf{A}^{-1}$ on the vector $\mathbf{b}$.
 //!
-//! The core of the example lies in the `f_tk_solver` closure, which defines how to solve
-//! the low-dimensional projected problem. For a linear system, this involves:
-//! 1.  Constructing the $k \times k$ tridiagonal matrix $\mathbf{T}_k$ from the Lanczos
-//!     coefficients.
-//! 2.  Solving the small linear system $\mathbf{T}_k \mathbf{y}' = \mathbf{e}_1$ to find the
-//!     coefficient vector $\mathbf{y}' = \mathbf{T}_k^{-1}\mathbf{e}_1$.
+//! The core of the example lies in the definition of the `linear_solver` closure,
+//! which constructs the tridiagonal matrix T_k from the Lanczos coefficients
+//! and solves the small linear system T_k * y = e_1 to obtain the projected solution.
 //!
 //! ```rust
 //! use faer::{Mat, dyn_stack::{MemBuffer, MemStack}};
@@ -93,11 +90,12 @@
 //! Matrix-free design supports implicit operators where A is defined by its action rather
 //! than explicit storage.
 
-// Declare the modules that form the public API of the crate.
+// Declare the modules that form the crate's API structure.
 pub mod algorithms;
 pub mod error;
 pub mod solvers;
 pub mod utils;
 
-// Re-export key types to the top level of the crate for easier access.
+// Re-export the main API from solvers for convenient access.
+// These are the primary functions that users should use.
 pub use solvers::{lanczos, lanczos_two_pass};

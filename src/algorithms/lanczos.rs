@@ -1,5 +1,8 @@
 //! Standard one-pass symmetric Lanczos algorithm implementation.
 //!
+//! ** NOTE: We recommend using the high-level method [`crate::solvers::lanczos`] instead. This
+//! module is intended for use cases where fine-grained control over the Lanczos process is required.
+//!
 //! This module implements the traditional Lanczos method that generates and stores the
 //! full orthonormal basis V_k during iteration. The main function [`lanczos_standard`]
 //! executes the Lanczos recurrence while maintaining all basis vectors in memory.
@@ -8,6 +11,14 @@
 //! of iterations. This approach is suitable when k is small enough that storing the
 //! n×k basis matrix does not create memory constraints. The stored basis enables
 //! direct solution reconstruction via matrix multiplication.
+//!
+//! ## When to use this module directly
+//!
+//! - You need access to the intermediate Lanczos basis matrix V_k
+//! - You want to implement custom iteration callbacks
+//! - You're conducting algorithm benchmarking
+//!
+//! For normal usage, prefer [`crate::solvers::lanczos`] which provides a simpler interface.
 
 use super::{
     LanczosCallback, LanczosDecomposition, LanczosError, LanczosIteration, LanczosOutput,

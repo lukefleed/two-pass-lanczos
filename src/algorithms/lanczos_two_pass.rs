@@ -1,5 +1,8 @@
 //! Memory-efficient two-pass symmetric Lanczos algorithm implementation.
 //!
+//! **NOTE: We recommend using the high-level method [`crate::solvers::lanczos_two_pass`] instead.
+//! This module is intended for use cases where fine-grained control over the Lanczos process is required.
+//!
 //! This module implements the two-pass Lanczos variant that reduces memory usage from
 //! O(nk) to O(n) by avoiding storage of the full basis matrix. The algorithm executes
 //! two separate phases:
@@ -16,6 +19,19 @@
 //! This approach trades doubled matrix-vector products (2k instead of k) for reduced
 //! memory footprint, making it suitable for large-scale problems where memory is
 //! the limiting factor.
+//!
+//! We also provide a variant of the second pass, [`lanczos_pass_two_with_basis`],
+//! which is intended for testing and verification purposes. This function regenerates
+//! the full basis and returns it alongside the solution, allowing users to compare
+//! the regenerated basis with the one produced by the standard Lanczos method.
+//!
+//! ## When to use this module directly
+//!
+//! - You need access to intermediate decomposition results between passes
+//! - You want to implement custom logic between the two passes
+//! - You need the regenerated basis matrix for testing purposes
+//!
+//! For normal usage, prefer [`crate::solvers::lanczos_two_pass`] which handles both passes automatically.
 
 use super::{
     LanczosDecomposition, LanczosError, LanczosErrorKind, LanczosIteration, LanczosPassTwoOutput,
@@ -46,7 +62,7 @@ use faer::{
 ///
 /// # Returns
 /// A `Result` containing the [`LanczosDecomposition`] on success, or a [`LanczosError`].
-pub(crate) fn lanczos_pass_one<T: ComplexField>(
+pub fn lanczos_pass_one<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
@@ -112,7 +128,7 @@ where
 ///
 /// # Returns
 /// A `Result` containing the final approximate solution vector $\mathbf{x}_k$.
-pub(crate) fn lanczos_pass_two<T: ComplexField>(
+pub fn lanczos_pass_two<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
@@ -131,7 +147,7 @@ where
 /// This function is identical to `lanczos_pass_two` but additionally returns the full
 /// regenerated basis matrix $\mathbf{V}'_k$. It is used only during testing
 /// and is used to verify the numerical stability and faithfulness of the regeneration process
-/// by allowing a direct comparison with the basis stored by [`lanczos_standard`].
+/// by allowing a direct comparison with the basis stored by [`crate::algorithms::lanczos::lanczos_standard`].
 #[allow(dead_code)]
 pub fn lanczos_pass_two_with_basis<T: ComplexField>(
     operator: &impl LinOp<T>,

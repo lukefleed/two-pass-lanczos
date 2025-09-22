@@ -91,7 +91,7 @@ fn find_file_by_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     Err(anyhow!("No .{} file found in directory {:?}", ext, dir))
 }
 
-/// A helper function to assemble a sparse [`faer::SparseColMat`] from the Lanczos coefficients.
+/// A helper function to assemble a sparse [`faer::sparse::SparseColMat`] from the Lanczos coefficients.
 /// This uses a triplet representation for efficient sparse matrix construction, which is
 /// then used to solve the projected system with a sparse LU decomposition.
 fn assemble_tridiagonal_sparse(alphas: &[f64], betas: &[f64]) -> Result<SparseColMat<usize, f64>> {

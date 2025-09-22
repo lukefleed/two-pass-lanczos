@@ -1,8 +1,7 @@
 //! File loading utilities for KKT system test problems.
 //!
 //! This module handles parsing of DIMACS network files (.dmx) and quadratic cost files (.qfc)
-//! to construct Karush-Kuhn-Tucker system matrices. These file formats are used for min-cost
-//! flow problems and provide realistic sparse test cases for the Lanczos algorithms.
+//! to construct Karush-Kuhn-Tucker system matrices.
 
 use faer::sparse::{SparseColMat, Triplet};
 use std::{
@@ -47,7 +46,7 @@ pub enum DataLoaderError {
 ///
 /// # Implementation Notes
 ///
-/// We use `usize` for the matrix indices (`I` in `SparseColMat<I, T>`),
+/// We use [`usize`] for the matrix indices (`I` in `SparseColMat<I, T>`),
 /// as it aligns with Rust's memory addressing and is efficient for this use case.
 pub struct KKTSystem {
     /// The complete KKT matrix A = [[D, E^T], [E, 0]], stored in a sparse column format.

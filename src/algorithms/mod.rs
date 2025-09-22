@@ -1,5 +1,25 @@
 //! Core Lanczos algorithm implementations for Krylov subspace methods.
 //!
+//! **NOTE**: We recommend using the high-level method the functions in [`crate::solvers`] instead.
+//! This module is intended for use cases where fine-grained control over the Lanczos process is required.
+//!
+//! This module contains the low-level algorithm implementations that power the high-level
+//! solvers. These functions are exposed publicly for:
+//!
+//! - Users who need fine-grained control
+//! - Testing and benchmarking purposes
+//! - Algorithm experimentation
+//!
+//! ## Standard API vs Low-level API
+//!
+//! **Recommended**: Use [`crate::solvers::lanczos`] and [`crate::solvers::lanczos_two_pass`]
+//! for normal usage. These provide a clean, user-friendly interface.
+//!
+//! **Advanced**: Use functions from this module only if you need access to intermediate
+//! results like the Lanczos basis matrix V_k or want to implement custom callbacks.
+//!
+//! ## Implementation Details
+//!
 //! This module implements the symmetric Lanczos process for computing f(A)b by projecting
 //! the operator A onto a small Krylov subspace, yielding a tridiagonal matrix T_k.
 //!
@@ -104,7 +124,7 @@ pub struct LanczosOutput<T: ComplexField> {
 /// Contains the output of the second pass, including the regenerated basis.
 ///
 /// This struct is exposed only for testing purposes to allow for a direct
-/// norm comparison between the stored basis from [`lanczos_standard`] and the
+/// norm comparison between the stored basis from [`crate::algorithms::lanczos::lanczos_standard`] and the
 /// regenerated basis.
 #[derive(Debug)]
 pub struct LanczosPassTwoOutput<T: ComplexField> {
