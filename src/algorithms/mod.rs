@@ -591,6 +591,7 @@ mod tests {
     macro_rules! generate_property_tests {
         () => {
             mod generated {
+                #[allow(unused_imports)]
                 use super::*;
                 include!(concat!(env!("OUT_DIR"), "/lanczos_properties_tests.rs"));
             }
