@@ -1,3 +1,21 @@
+//! Implements the standard one-pass symmetric Lanczos algorithm.
+//!
+//! This module contains the implementation for the standard variant of the symmetric
+//! Lanczos process for approximating the action of a matrix function on a vector,
+//! $f(\mathbf{A})\mathbf{b}$.
+//!
+//! The core function, [`lanczos_standard`], executes the Lanczos recurrence and, critically,
+//! stores the full sequence of generated orthonormal basis vectors $\{ \mathbf{v}_j \}_{j=1}^k$
+//! in a dense matrix $\mathbf{V}_k$. This approach is conceptually direct but is defined by
+//! its memory complexity, which scales as $O(nk)$ where $n$ is the problem dimension
+//! and $k$ is the number of iterations.
+//!
+//! This implementation is most suitable for problems where the number of iterations $k$ is
+//! small enough that the memory required to store the basis does not become a bottleneck.
+//! It serves as the baseline against which memory-efficient variants, such as the two-pass
+//! method, are compared. The components defined in the parent module are used to maintain
+//! a consistent API and internal structure.
+
 use super::{
     LanczosCallback, LanczosDecomposition, LanczosError, LanczosIteration, LanczosOutput,
     TridiagonalSystemView, breakdown_tolerance,

@@ -111,7 +111,7 @@ pub struct LanczosOutput<T: ComplexField> {
 
 /// Contains the output of the second pass, including the regenerated basis.
 ///
-/// This struct is exposed only for testing purposes (via `cfg(test)`) to allow for a direct
+/// This struct is exposed only for testing purposes to allow for a direct
 /// norm comparison between the stored basis from [`lanczos_standard`] and the
 /// regenerated basis.
 #[derive(Debug)]
