@@ -1,15 +1,10 @@
-//! Experiment Runner for Memory-Computation Trade-off Analysis.
+//! Memory-computation trade-off analysis for Lanczos algorithm variants.
 //!
-//! This executable employs an orchestrator/worker architecture to empirically validate
-//! the theoretical trade-offs between the one-pass and two-pass Lanczos algorithms.
-//! When run, the main process acts as an "orchestrator," which spawns isolated child
-//! processes ("workers") for each Lanczos variant.
-//!
-//! This design is crucial for accurate memory profiling. By running each variant in a
-//! separate process, we can reliably measure its Peak Resident Set Size (RSS) without
-//! interference from the orchestrator's memory footprint or other concurrent tasks.
-//! The orchestrator communicates with workers via an environment variable and collects
-//! results by parsing the workers' standard output.
+//! This executable measures memory usage and execution time as iteration count increases
+//! for both standard and two-pass Lanczos methods. Uses isolated worker processes to
+//! ensure accurate memory profiling without interference. The orchestrator spawns workers
+//! for each algorithm variant and collects Peak Resident Set Size measurements to
+//! validate theoretical O(nk) vs O(n) memory complexity differences.
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};

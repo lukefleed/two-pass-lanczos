@@ -32,6 +32,8 @@ The release profile includes aggressive optimization settings designed for numer
 - **Debug Information**: Retained in release builds for meaningful stack traces during long computations
 - **Disabled Overflow Checks**: Standard for high-performance numerical code
 
+> Compile time may be longer due to LTO and single codegen unit settings, but the resulting binaries will be significantly faster. If you need faster compile times during development, just comment out the relevant lines in `Cargo.toml` or build without `--release`. Note that debug builds will be significantly slower for numerical workloads
+
 ### Faer Optimization
 
 The project leverages aggressive optimization for the `faer` linear algebra library even in debug builds through the development profile override:

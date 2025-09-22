@@ -1,12 +1,9 @@
-//! This module defines the custom error types for the library.
+//! Error types for Lanczos algorithm failures.
 //!
-//! This module centralizes all possible error conditions that
-//! can arise within the Lanczos algorithm implementations into a single, comprehensive
-//! enum: [`LanczosError`].
-//!
-//! Using the [`thiserror`] crate allows us to create idiomatic error types with minimal
-//! boilerplate. Note that [`faer::linalg::evd::EvdError`] does not implement the standard
-//! [`std::error::Error`] trait, so we wrap it manually to provide a compatible error type.
+//! This module defines error conditions that can occur during Lanczos iterations.
+//! The main type [`LanczosError`] covers numerical breakdowns, dimension mismatches,
+//! invalid parameters, and solver failures. Built using [`thiserror`] for clean
+//! error handling with automatic trait implementations.
 use thiserror::Error;
 
 /// Represents all possible errors that can occur during a Lanczos process.

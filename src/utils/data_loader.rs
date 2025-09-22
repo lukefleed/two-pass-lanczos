@@ -1,8 +1,8 @@
-//! This module provides utilities for loading test problems from files.
+//! File loading utilities for KKT system test problems.
 //!
-//! It includes functions to parse DIMACS format files for network topologies
-//! and custom `.qfc` files for quadratic cost coefficients, ultimately
-//! assembling them into a complete Karush-Kuhn-Tucker (KKT) system matrix.
+//! This module handles parsing of DIMACS network files (.dmx) and quadratic cost files (.qfc)
+//! to construct Karush-Kuhn-Tucker system matrices. These file formats are used for min-cost
+//! flow problems and provide realistic sparse test cases for the Lanczos algorithms.
 
 use faer::sparse::{SparseColMat, Triplet};
 use std::{

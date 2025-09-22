@@ -1,5 +1,8 @@
-//! This module provides utilities for performance measurement.
-//! It includes helpers for measuring memory usage and execution time.
+//! Performance measurement utilities for memory and timing analysis.
+//!
+//! This module provides platform-specific tools for measuring peak memory usage
+//! and execution timing. Functions target Linux systems and read from /proc/self/status
+//! to obtain reliable memory statistics for experimental analysis.
 
 /// Reads the peak resident set size (VmPeak) from /proc/self/status on Linux.
 ///

@@ -1,23 +1,15 @@
-//! Implements the symmetric Lanczos algorithm for Krylov subspace methods.
+//! Core Lanczos algorithm implementations for Krylov subspace methods.
 //!
-//! This module provides two primary implementations for computing the action of a matrix
-//! function on a vector, $f(\mathbf{A})\mathbf{b}$. The core idea is to project the
-//! high-dimensional operator $\mathbf{A}$ onto a low-dimensional Krylov subspace,
-//! yielding a small, symmetric tridiagonal matrix $\mathbf{T}_k$.
+//! This module implements the symmetric Lanczos process for computing f(A)b by projecting
+//! the operator A onto a small Krylov subspace, yielding a tridiagonal matrix T_k.
 //!
-//! The module includes:
-//! 1.  A **standard one-pass algorithm**, which generates and stores the orthonormal basis
-//!     vectors $\mathbf{V}_k$ of the Krylov subspace. This approach is conceptually simple
-//!     but incurs an $O(nk)$ memory cost.
-//! 2.  A **memory-efficient two-pass variant**, which avoids storing the basis. It first
-//!     computes the scalar coefficients of $\mathbf{T}_k$ and then regenerates the basis
-//!     vectors on-the-fly in a second pass to synthesize the final solution.
+//! Two implementation strategies are provided:
+//! 1. **Standard algorithm**: Stores the full orthonormal basis V_k (O(nk) memory)
+//! 2. **Two-pass variant**: Avoids basis storage through regeneration (O(n) memory)
 //!
-//! The implementations are generic over any type that implements the [`faer::matrix_free::LinOp`]
-//! trait. This matrix-free design allows the algorithms to operate on any linear operator,
-//! not just explicit matrices, which is crucial for applications where $\mathbf{A}$ is defined
-//! implicitly (e.g., via a function call). The use of [`MemStack`] provides efficient stack-based
-//! memory management for temporary workspaces, minimizing heap allocation overhead.
+//! Both algorithms operate on matrix-free linear operators ([`faer::matrix_free::LinOp`])
+//! and use stack-allocated workspaces ([`MemStack`]) for temporary storage. The implementations
+//! are generic over complex field types and handle numerical breakdown detection.
 
 // Declare the submodules. The specific implementations will reside in these files.
 pub mod lanczos;

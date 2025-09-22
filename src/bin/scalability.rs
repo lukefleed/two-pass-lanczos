@@ -1,16 +1,10 @@
-//! Experiment Runner for Scalability Analysis.
+//! Scalability analysis measuring memory and time scaling with problem dimension.
 //!
-//! This executable orchestrates the scalability experiment by employing an
-//! orchestrator/worker process model. The main process, the "orchestrator," iterates
-//! through a range of problem sizes (`n`). For each size, it first invokes the
-//! `datagen` binary to generate the required KKT system files. It then spawns
-//! isolated "worker" child processes for each Lanczos variant (`standard`, `two-pass`)
-//! to run the computation and measure performance.
-//!
-//! By isolating each computational task in a separate process, we ensure that its
-//! memory usage is not conflated with that of the orchestrator or other workers.
-//! Communication is handled via environment variables (to assign roles) and stdout
-//! (for workers to report results).
+//! This executable measures how memory usage and execution time scale as problem size
+//! increases. Uses an orchestrator/worker process model where the main process generates
+//! test instances of increasing size and spawns isolated worker processes to measure
+//! each algorithm variant. Isolation prevents memory usage contamination between runs.
+//! Results are collected via stdout communication between processes.
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};

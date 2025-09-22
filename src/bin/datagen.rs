@@ -1,9 +1,10 @@
-//! A data generation utility for creating KKT system test instances.
+//! KKT system test instance generation utility.
 //!
-//! This binary acts as a command-line driven wrapper that orchestrates a
-//! three-stage generation pipeline using external, pre-compiled tools.
-//! It executes `pargen`, `netgen`, and `qfcgen` in sequence to produce
-//! a complete KKT test instance, consisting of a `.dmx` (topology) and a `.qfc` (cost) file.
+//! This binary orchestrates a three-stage pipeline using external tools (pargen, netgen, qfcgen)
+//! to generate complete KKT test instances. Produces .dmx files containing network topology
+//! and .qfc files with quadratic cost coefficients for min-cost flow problems. Provides
+//! command-line control over problem parameters including network size, structural properties,
+//! and cost distributions.
 
 use anyhow::{Context, Result, anyhow, ensure};
 use clap::{Parser, ValueEnum};
@@ -25,7 +26,7 @@ enum CostLevel {
 
 impl CostLevel {
     /// Returns the single-character string representation required by `pargen`.
-    fn to_arg_str(&self) -> &'static str {
+    fn to_arg_str(self) -> &'static str {
         match self {
             CostLevel::Low => "b",
             CostLevel::High => "a",
@@ -47,7 +48,7 @@ enum Scaling {
 
 impl Scaling {
     /// Returns the string representation required by `pargen`.
-    fn to_arg_str(&self) -> &'static str {
+    fn to_arg_str(self) -> &'static str {
         match self {
             Scaling::Scaled => "s",
             Scaling::NotScaled => "ns",

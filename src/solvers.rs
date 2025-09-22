@@ -1,9 +1,9 @@
-//! High-level solvers for computing the action of a matrix function on a vector.
+//! High-level solvers for matrix function computations via Lanczos methods.
 //!
-//! This module provides a user-friendly API for executing Lanczos-based algorithms to
-//! compute $\mathbf{x} \approx f(\mathbf{A})\mathbf{b}$. It abstracts the internal details of the
-//! Lanczos passes and exposes two primary functions, [`lanczos`] and [`lanczos_two_pass`],
-//! which represent the standard one-pass and the memory-efficient two-pass methods, respectively.
+//! This module provides the main user interface for computing f(A)b where f is a matrix
+//! function, A is a Hermitian operator, and b is a vector. The two functions [`lanczos`]
+//! and [`lanczos_two_pass`] represent the standard and memory-efficient variants respectively.
+//! Both methods abstract the internal Lanczos iteration details and provide identical APIs.
 
 use crate::{
     algorithms::{

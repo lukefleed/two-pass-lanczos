@@ -1,16 +1,10 @@
-//! Experiment Runner for the Numerical Stability of Lanczos Bases.
+//! Orthogonality analysis for Lanczos basis stability measurement.
 //!
-//! This executable is a component of the project's validation suite. It conducts
-//! an analysis of the numerical properties of the Lanczos basis vectors, addressing
-//! the question: does the memory-saving two-pass method introduce numerical
-//! instabilities compared to the standard one-pass algorithm?
-//!
-//! The analysis focuses on two key metrics:
-//! 1.  **Loss of Orthogonality:** quantified by $\|I - \mathbf{V}_k^H \mathbf{V}_k\|_F$.
-//! 2.  **Basis Drift:** quantified by $\|\mathbf{V}_k - \mathbf{V}'_k\|_F$.
-//!
-//! The analysis is performed across different problem scenarios to correlate basis stability
-//! with the spectral properties of the operator.
+//! This executable analyzes the numerical stability of Lanczos basis vectors by measuring
+//! orthogonality loss and basis drift between standard and two-pass methods. Computes
+//! ||I - V_k^H V_k||_F to quantify orthogonality deterioration and ||V_k - V'_k||_F
+//! to measure basis regeneration accuracy. Tests different spectral conditions to
+//! assess stability under various numerical challenges.
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
@@ -191,11 +185,11 @@ fn main() -> Result<()> {
             continue;
         }
         log::info!("Running for k = {}...", k);
-        let mut stack = MemStack::new(&mut stack_mem);
+        let stack = MemStack::new(&mut stack_mem);
 
         // --- 3. Generate Bases ---
         // a. Execute the standard one-pass algorithm to get the reference basis V_k.
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
         let v_k_standard = standard_output.v_k;
         let steps = standard_output.decomposition.steps_taken;
         if steps == 0 {
@@ -211,7 +205,7 @@ fn main() -> Result<()> {
             b.as_ref(),
             &standard_output.decomposition,
             y_k_dummy.as_ref(),
-            &mut stack,
+            stack,
         )?;
         let v_k_regenerated = pass_two_output.v_k;
 

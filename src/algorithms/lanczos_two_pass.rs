@@ -1,27 +1,21 @@
-//! Implements the memory-efficient two-pass symmetric Lanczos algorithm.
+//! Memory-efficient two-pass symmetric Lanczos algorithm implementation.
 //!
-//! This module provides the implementation for the two-pass variant of the symmetric
-//! Lanczos algorithm, designed to compute $f(\mathbf{A})\mathbf{b}$ for large-scale problems
-//! where memory is a primary constraint.
+//! This module implements the two-pass Lanczos variant that reduces memory usage from
+//! O(nk) to O(n) by avoiding storage of the full basis matrix. The algorithm executes
+//! two separate phases:
 //!
-//! The core strategy of this method is to decouple the generation of the tridiagonal
-//! matrix $\mathbf{T}_k$ from the final synthesis of the solution vector $\mathbf{x}_k$.
-//! This is achieved through two distinct computational passes:
+//! **Pass One** ([`lanczos_pass_one`]): Runs the Lanczos recurrence to compute the
+//! tridiagonal matrix T_k coefficients (alphas and betas). Basis vectors are discarded
+//! after each iteration, maintaining constant memory usage.
 //!
-//! 1.  **Pass One ([`lanczos_pass_one`])**: This function executes the Lanczos recurrence
-//!     to compute the scalar coefficients $(\alpha_j, \beta_j)$ that define $\mathbf{T}_k$.
-//!     Crucially, the orthonormal basis vectors are discarded as they are generated,
-//!     resulting in a minimal memory footprint of $O(n)$.
+//! **Pass Two** ([`lanczos_pass_two`]): After solving the projected problem on T_k,
+//! re-executes the Lanczos recurrence using stored coefficients to regenerate basis
+//! vectors on demand. Accumulates the final solution incrementally without storing
+//! the full basis.
 //!
-//! 2.  **Pass Two ([`lanczos_pass_two`])**: After the projected problem is solved using
-//!     $\mathbf{T}_k$, this function reconstructs the final solution. It does so by
-//!     re-executing the Lanczos recurrence, using the stored coefficients to regenerate
-//!     the basis vectors on-the-fly. The solution vector is accumulated as each basis
-//!     vector becomes available, again maintaining an $O(n)$ memory footprint.
-//!
-//! The fundamental trade-off of this approach is a reduction in memory complexity from
-//! $O(nk)$ to $O(n)$ at the cost of doubling the number of computationally expensive
-//! matrix-vector products from $k$ to $2k$.
+//! This approach trades doubled matrix-vector products (2k instead of k) for reduced
+//! memory footprint, making it suitable for large-scale problems where memory is
+//! the limiting factor.
 
 use super::{
     LanczosDecomposition, LanczosError, LanczosErrorKind, LanczosIteration, LanczosPassTwoOutput,

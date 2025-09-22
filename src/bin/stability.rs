@@ -1,10 +1,9 @@
-//! Experiment Runner for the Numerical Stability and Accuracy Analysis.
+//! Numerical accuracy and stability analysis for Lanczos algorithms.
 //!
-//! This executable conducts an analysis of the Lanczos algorithms by
-//! comparing their computed solutions against a known analytical "ground truth".
-//! It evaluates both the standard one-pass and the memory-efficient two-pass
-//! variants to demonstrate their numerical equivalence and accuracy across four
-//! distinct problem scenarios.
+//! This executable measures solution accuracy by comparing Lanczos approximations against
+//! analytically computed ground truth solutions. Tests both standard and two-pass methods
+//! across different matrix functions (inverse, exponential) and conditioning scenarios
+//! (well-conditioned, ill-conditioned) to validate numerical equivalence and stability.
 
 use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
