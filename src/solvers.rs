@@ -6,7 +6,10 @@
 //! which represent the standard one-pass and the memory-efficient two-pass methods, respectively.
 
 use crate::{
-    algorithms::lanczos::{lanczos_pass_one, lanczos_pass_two, lanczos_standard},
+    algorithms::{
+        lanczos::lanczos_standard,
+        lanczos_two_pass::{lanczos_pass_one, lanczos_pass_two},
+    },
     error::{LanczosError, LanczosErrorKind},
 };
 use faer::{

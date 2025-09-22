@@ -20,7 +20,9 @@ use faer::{
     prelude::*,
     sparse::{SparseColMat, Triplet},
 };
-use lanczos_project::algorithms::lanczos::{lanczos_pass_two_with_basis, lanczos_standard};
+use lanczos_project::algorithms::{
+    lanczos::lanczos_standard, lanczos_two_pass::lanczos_pass_two_with_basis,
+};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::Serialize;
 use std::path::PathBuf;
