@@ -1,6 +1,6 @@
-//! Core Lanczos algorithm implementations for Krylov subspace methods.
+//! Low-level core Lanczos algorithm implementations for Krylov subspace methods.
 //!
-//! **NOTE**: We recommend using the high-level method the functions in [`crate::solvers`] instead.
+//! **NOTE**: We recommend using the high-level methods the functions in [`crate::solvers`] instead.
 //! This module is intended for use cases where fine-grained control over the Lanczos process is required.
 //!
 //! This module contains the low-level algorithm implementations that power the high-level

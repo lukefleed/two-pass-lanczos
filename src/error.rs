@@ -2,8 +2,8 @@
 //!
 //! This module defines error conditions that can occur during Lanczos iterations.
 //! The main type [`LanczosError`] covers numerical breakdowns, dimension mismatches,
-//! invalid parameters, and solver failures. Built using [`thiserror`] for clean
-//! error handling with automatic trait implementations.
+//! invalid parameters, and solver failures.
+
 use thiserror::Error;
 
 /// Represents all possible errors that can occur during a Lanczos process.

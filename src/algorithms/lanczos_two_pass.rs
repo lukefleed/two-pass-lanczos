@@ -1,17 +1,17 @@
 //! Memory-efficient two-pass symmetric Lanczos algorithm implementation.
 //!
-//! **NOTE: We recommend using the high-level method [`crate::solvers::lanczos_two_pass`] instead.
+//! **NOTE**: We recommend using the high-level method [`crate::solvers::lanczos_two_pass`] instead.
 //! This module is intended for use cases where fine-grained control over the Lanczos process is required.
 //!
 //! This module implements the two-pass Lanczos variant that reduces memory usage from
 //! O(nk) to O(n) by avoiding storage of the full basis matrix. The algorithm executes
 //! two separate phases:
 //!
-//! **Pass One** ([`lanczos_pass_one`]): Runs the Lanczos recurrence to compute the
+//! * **Pass One** ([`lanczos_pass_one`]): Runs the Lanczos recurrence to compute the
 //! tridiagonal matrix T_k coefficients (alphas and betas). Basis vectors are discarded
 //! after each iteration, maintaining constant memory usage.
 //!
-//! **Pass Two** ([`lanczos_pass_two`]): After solving the projected problem on T_k,
+//! * **Pass Two** ([`lanczos_pass_two`]): After solving the projected problem on T_k,
 //! re-executes the Lanczos recurrence using stored coefficients to regenerate basis
 //! vectors on demand. Accumulates the final solution incrementally without storing
 //! the full basis.
@@ -61,7 +61,7 @@ use faer::{
 /// * `stack`: A `MemStack` for temporary allocations.
 ///
 /// # Returns
-/// A `Result` containing the [`LanczosDecomposition`] on success, or a [`LanczosError`].
+/// A [`Result`] containing the [`LanczosDecomposition`] on success, or a [`LanczosError`].
 pub fn lanczos_pass_one<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
@@ -115,9 +115,6 @@ where
 /// by regenerating the Lanczos basis vectors on-the-fly using the coefficients from the
 /// first pass. It avoids storing the full basis, thus maintaining an $O(n)$ memory footprint.
 ///
-/// This is a thin wrapper around the core implementation, `lanczos_pass_two_impl`,
-/// configured to not store the regenerated basis, ensuring minimal memory usage for the public API.
-///
 /// # Arguments
 /// * `operator`: The linear operator $\mathbf{A}$.
 /// * `b`: The original starting vector.
@@ -127,7 +124,7 @@ where
 /// * `stack`: A `MemStack` for temporary allocations.
 ///
 /// # Returns
-/// A `Result` containing the final approximate solution vector $\mathbf{x}_k$.
+/// A [`Result`] containing the final approximate solution vector $\mathbf{x}_k$.
 pub fn lanczos_pass_two<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,

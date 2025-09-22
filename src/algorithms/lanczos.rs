@@ -1,6 +1,6 @@
 //! Standard one-pass symmetric Lanczos algorithm implementation.
 //!
-//! ** NOTE: We recommend using the high-level method [`crate::solvers::lanczos`] instead. This
+//! **NOTE**: We recommend using the high-level method [`crate::solvers::lanczos`] instead. This
 //! module is intended for use cases where fine-grained control over the Lanczos process is required.
 //!
 //! This module implements the traditional Lanczos method that generates and stores the

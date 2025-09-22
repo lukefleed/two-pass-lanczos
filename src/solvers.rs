@@ -42,7 +42,7 @@ use faer::{
 ///   This decouples the Lanczos iteration from the specifics of the function $f$.
 ///
 /// # Returns
-/// A `Result` containing the final approximate solution vector $\mathbf{x}_k$, or a `LanczosError`.
+/// A [`Result`] containing the final approximate solution vector $\mathbf{x}_k$, or a [`LanczosError`].
 pub fn lanczos<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
@@ -129,7 +129,7 @@ where
 ///   This decouples the Lanczos iteration from the specifics of the function $f$.
 ///
 /// # Returns
-/// A `Result` containing the final approximate solution vector $\mathbf{x}_k$, or a `LanczosError`.
+/// A [`Result`] containing the final approximate solution vector $\mathbf{x}_k$, or a [`LanczosError`].
 pub fn lanczos_two_pass<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
