@@ -1,0 +1,446 @@
+# Two-Pass Lanczos Implementation
+
+An efficient implementation of the two-pass Lanczos method for solving large-scale linear algebra problems, with detailed numerical analysis and performance benchmarks.
+
+## Compilation and Optimization
+
+### Building the Project
+
+Compile the project with full optimizations:
+
+```bash
+cargo build --release
+```
+
+The release profile includes aggressive optimization settings designed for numerical computing:
+
+- **Full Link-Time Optimization (LTO)**: `lto = "fat"` enables cross-crate optimization for maximum performance
+- **Single Compilation Unit**: `codegen-units = 1` forces the optimizer to consider the entire crate context
+- **Runtime Optimizations**: `opt-level = 3` enables all compiler optimizations
+- **Debug Information**: Retained in release builds for meaningful stack traces during long computations
+- **Disabled Overflow Checks**: Standard for high-performance numerical code
+
+### Faer Optimization
+
+The project leverages aggressive optimization for the `faer` linear algebra library even in debug builds through the development profile override:
+
+```toml
+[profile.dev.package.faer]
+opt-level = 3
+```
+
+This ensures that numerical computations remain fast during development and testing phases.
+
+## Dependencies
+
+### Core Linear Algebra: Faer
+
+The implementation is built on the [faer](https://github.com/sarah-ek/faer-rs) library, a modern Rust linear algebra framework that provides:
+
+- High-performance BLAS/LAPACK operations
+- Memory-efficient sparse matrix representations
+- Stack-allocated temporary buffers for memory management
+- Matrix-free linear operators for large-scale computations
+
+Other dependencies include:
+- **Clap**: Command-line interface framework
+- **CSV**: Data export for experimental results
+- **Serde**: Serialization for structured data output
+- **Anyhow**: Error handling and context propagation
+- **Rand**: Deterministic random number generation for reproducible experiments
+
+## Build Script (build.rs)
+
+The `build.rs` script automatically generates test suites by scanning the `data/` directory for test instances. It performs the following operations:
+
+1. **Instance Discovery**: Scans directories `data/1000`, `data/2000`, and `data/3000` for `.dmx` and `.qfc` file pairs
+2. **Test Generation**: Creates parameterized test functions for each discovered instance
+3. **Property Validation**: Generates tests for four mathematical properties:
+   - **Decomposition Consistency**: Validates the Lanczos tridiagonal decomposition
+   - **Lanczos Relation**: Verifies the fundamental recurrence relation
+   - **Orthonormality**: Checks orthogonality of the Krylov basis vectors
+   - **Reconstruction Stability**: Tests numerical stability of the two-pass reconstruction
+
+The generated tests are included at compile time via the `include!` macro, providing validation coverage for all available datasets.
+
+## Repository Structure
+
+```
+two-pass-lanczos/
+├── Cargo.toml              # Project configuration and dependencies
+├── build.rs                # Automated test generation
+├── src/
+│   ├── lib.rs              # Core library exports
+│   ├── error.rs            # Error types and handling
+│   ├── solvers.rs          # Lanczos algorithm implementations
+│   ├── algorithms/         # Lanczos variants and utilities
+│   │   ├── mod.rs
+│   │   ├── lanczos_standard.rs
+│   │   └── lanczos_two_pass.rs
+│   ├── bin/                # Experiment executables
+│   │   ├── datagen.rs      # Data generation orchestrator
+│   │   ├── scalability.rs  # Performance scaling analysis
+│   │   ├── stability.rs    # Numerical accuracy experiments
+│   │   ├── tradeoff.rs     # Memory-time tradeoff analysis
+│   │   └── orthogonality.rs # Basis orthogonality analysis
+│   └── utils/              # Utility modules
+│       ├── mod.rs
+│       ├── data_loader.rs  # KKT system file parsing
+│       └── perf.rs         # Performance measurement utilities
+├── tests/
+│   └── correctness.rs      # Mathematical correctness validation
+├── data/                   # Test instance datasets
+│   ├── 1000/               # 1000-node network problems
+│   ├── 2000/               # 2000-node network problems
+│   ├── 3000/               # 3000-node network problems
+│   ├── netgen/             # DIMACS network generator
+│   └── qcnd/               # Quadratic cost generation tools
+├── python/                 # Visualization and analysis scripts
+│   ├── plot_scalability.py
+│   ├── plot_stability.py
+│   ├── plot_tradeoff.py
+│   └── plot_orthogonality.py
+├── results/                # Experimental output data
+│   └── images/             # Generated plots and figures
+└── tex/                    # LaTeX report documentation
+    ├── report.tex
+    └── ref.bib
+```
+
+## Data Generation
+
+The `datagen` binary orchestrates a three-stage pipeline to generate KKT test instances using external tools:
+
+### Usage
+
+```bash
+cargo run --release --bin datagen -- \
+    --arcs 5000 \
+    --rho 3 \
+    --instance-id 1 \
+    --fixed-cost a \
+    --quadratic-cost a \
+    --scaling ns \
+    --output-dir data/custom
+```
+
+### Parameters
+
+- **arcs**: Number of arcs in the generated network
+- **rho**: Structural parameter (1-3) controlling network topology
+- **instance-id**: Unique identifier used as random seed
+- **fixed-cost**: Cost level for fixed costs (`a` = high, `b` = low)
+- **quadratic-cost**: Cost level for quadratic costs (`a` = high, `b` = low)
+- **scaling**: Arc capacity scaling (`s` = scaled, `ns` = not scaled)
+
+### Generation Pipeline
+
+1. **pargen**: Generates parameter file with problem specifications
+2. **netgen**: Creates network topology in DIMACS format (.dmx)
+3. **qfcgen**: Generates quadratic cost coefficients (.qfc)
+
+### Example: Generate Multiple Instances
+
+```bash
+# Generate instances with different structural parameters
+for rho in 1 2 3; do
+    for instance in 1 2 3; do
+        cargo run --release --bin datagen -- \
+            --arcs 10000 \
+            --rho $rho \
+            --instance-id $instance \
+            --fixed-cost a \
+            --quadratic-cost a \
+            --scaling ns \
+            --output-dir data/custom_10k
+    done
+done
+```
+
+## Correctness Testing
+
+The test suite validates mathematical properties of the Lanczos implementations against analytically computed ground truth solutions.
+
+### Running All Tests
+
+```bash
+cargo test --release
+```
+
+### Test Categories
+
+The tests are automatically generated by `build.rs` and cover four fundamental properties:
+
+1. **Decomposition Consistency**: Validates that the tridiagonal matrix `T_k` correctly represents the projection of `A` onto the Krylov subspace
+2. **Lanczos Relation**: Verifies the fundamental recurrence `A V_k = V_{k+1} \bar{T}_k`
+3. **Orthonormality**: Checks that the Krylov basis vectors maintain orthogonality
+4. **Reconstruction Stability**: Tests that the two-pass method reproduces the same basis as the standard method
+
+### Test Failures
+
+Some tests may fail due to invalid indices in downloaded datasets from [CommaLab MCF repository](https://commalab.di.unipi.it/datasets/mcf/). These failures are not algorithmic errors but data quality issues in the source datasets. The problematic datasets are primarily in directories:
+
+- `data/1000/` - Single-commodity problems with 1000 nodes
+- `data/2000/` - Single-commodity problems with 2000 nodes
+- `data/3000/` - Single-commodity problems with 3000 nodes
+
+Valid instances can be generated using the `datagen` utility as described above.
+
+### Running Specific Test Categories
+
+```bash
+# Run only orthonormality tests
+cargo test orthonormality --release
+
+# Run tests for a specific instance size
+cargo test netgen_1000 --release
+```
+
+## Reproducing Experimental Results
+
+The project includes three experimental analyses corresponding to the results in `tex/report.pdf`. Each experiment generates CSV data that is subsequently visualized using Python scripts.
+
+### 1. Memory and Computation Trade-off
+
+This experiment validates the theoretical memory-computation trade-off by analyzing how memory usage and execution time vary with iteration count across different problem scales.
+
+**Test Matrix Generation:**
+The experiment uses three KKT system instances of different scales:
+- Large-scale: 500,000 arcs
+- Medium-scale: 50,000 arcs
+- Small-scale: 5,000 arcs
+
+All instances use `rho=3` as the structural parameter for network topology generation.
+
+**Generate Data:**
+```bash
+# Large-scale problem (500K arcs)
+cargo run --release --bin tradeoff -- \
+    --arcs 500000 \
+    --rho 3 \
+    --k-min 50 \
+    --k-max 1000 \
+    --k-step 50 \
+    --output results/tradeoff_arcs500k_rho3.csv
+
+# Medium-scale problem (50K arcs)
+cargo run --release --bin tradeoff -- \
+    --arcs 50000 \
+    --rho 3 \
+    --k-min 50 \
+    --k-max 1000 \
+    --k-step 50 \
+    --output results/tradeoff_arcs50k_rho3.csv
+
+# Small-scale problem (5K arcs)
+cargo run --release --bin tradeoff -- \
+    --arcs 5000 \
+    --rho 3 \
+    --k-min 50 \
+    --k-max 1000 \
+    --k-step 50 \
+    --output results/tradeoff_arcs5k_rho3.csv
+```
+
+**Generate Plots:**
+```bash
+python python/plot_tradeoff.py \
+    --input results/tradeoff_arcs500k_rho3.csv \
+    --output-prefix results/images/tradeoff_arcs500k_rho3
+
+python python/plot_tradeoff.py \
+    --input results/tradeoff_arcs50k_rho3.csv \
+    --output-prefix results/images/tradeoff_arcs50k_rho3
+
+python python/plot_tradeoff.py \
+    --input results/tradeoff_arcs5k_rho3.csv \
+    --output-prefix results/images/tradeoff_arcs5k_rho3
+```
+
+This generates six plots total: memory and time plots for each of the three problem scales, demonstrating the O(nk) vs O(n) memory complexity difference and revealing cache effects in execution time.
+
+### 2. Scalability with Problem Dimension
+
+This experiment measures how memory usage and execution time scale with problem dimension while keeping the number of iterations fixed.
+
+**Generate Data:**
+```bash
+cargo run --release --bin scalability -- \
+    --arcs-start 5000 \
+    --arcs-end 500000 \
+    --arcs-step 25000 \
+    --rho 3 \
+    --k-fixed 500 \
+    --output results/scalability_k500_rho3.csv
+```
+
+**Generate Plots:**
+```bash
+python python/plot_scalability.py \
+    --input results/scalability_k500_rho3.csv \
+    --output-prefix results/images/scalability_k500_rho3
+```
+
+This generates two plots showing memory usage and execution time vs problem dimension, with k=500 iterations fixed across all problem sizes.
+
+### 3. Numerical Accuracy and Stability Analysis
+
+This experiment provides the most detailed analysis, combining accuracy measurements and orthogonality studies across multiple problem scenarios. It uses two executables (`stability` and `orthogonality`) to generate four distinct experimental configurations.
+
+**Problem Scenarios:**
+The analysis tests two matrix functions on two spectral conditions:
+- **Matrix Functions:**
+  - `inv`: Matrix inverse f(z) = z^(-1) (linear system solving)
+  - `exp`: Matrix exponential f(z) = exp(z)
+- **Spectral Conditions:**
+  - `well-conditioned`: Eigenvalues well-separated from function singularities
+  - `ill-conditioned`: Wide spectrum or eigenvalues near singularities
+
+This creates four combinations: {inv,exp} × {well-conditioned,ill-conditioned}.
+
+**Generate Accuracy Data:**
+```bash
+# Matrix inverse - well-conditioned spectrum
+cargo run --release --bin stability -- \
+    --function inv \
+    --scenario well-conditioned \
+    --n 1000 \
+    --k-min 10 \
+    --k-max 200 \
+    --k-step 10 \
+    --output results/accuracy_inv_well-conditioned.csv
+
+# Matrix inverse - ill-conditioned spectrum
+cargo run --release --bin stability -- \
+    --function inv \
+    --scenario ill-conditioned \
+    --n 1000 \
+    --k-min 10 \
+    --k-max 200 \
+    --k-step 10 \
+    --output results/accuracy_inv_ill-conditioned.csv
+
+# Matrix exponential - well-conditioned spectrum
+cargo run --release --bin stability -- \
+    --function exp \
+    --scenario well-conditioned \
+    --n 1000 \
+    --k-min 10 \
+    --k-max 200 \
+    --k-step 10 \
+    --output results/accuracy_exp_well-conditioned.csv
+
+# Matrix exponential - ill-conditioned spectrum
+cargo run --release --bin stability -- \
+    --function exp \
+    --scenario ill-conditioned \
+    --n 1000 \
+    --k-min 10 \
+    --k-max 200 \
+    --k-step 10 \
+    --output results/accuracy_exp_ill-conditioned.csv
+```
+
+**Generate Orthogonality Data:**
+```bash
+# Matrix inverse - well-conditioned spectrum
+cargo run --release --bin orthogonality -- \
+    --function inv \
+    --scenario well-conditioned \
+    --n 1000 \
+    --k-min 20 \
+    --k-max 500 \
+    --k-step 20 \
+    --output results/orthogonality_inv_well-conditioned.csv
+
+# Matrix inverse - ill-conditioned spectrum
+cargo run --release --bin orthogonality -- \
+    --function inv \
+    --scenario ill-conditioned \
+    --n 1000 \
+    --k-min 20 \
+    --k-max 500 \
+    --k-step 20 \
+    --output results/orthogonality_inv_ill-conditioned.csv
+
+# Matrix exponential - well-conditioned spectrum
+cargo run --release --bin orthogonality -- \
+    --function exp \
+    --scenario well-conditioned \
+    --n 1000 \
+    --k-min 20 \
+    --k-max 500 \
+    --k-step 20 \
+    --output results/orthogonality_exp_well-conditioned.csv
+
+# Matrix exponential - ill-conditioned spectrum
+cargo run --release --bin orthogonality -- \
+    --function exp \
+    --scenario ill-conditioned \
+    --n 1000 \
+    --k-min 20 \
+    --k-max 500 \
+    --k-step 20 \
+    --output results/orthogonality_exp_ill-conditioned.csv
+```
+
+**Generate All Plots:**
+```bash
+# Accuracy plots
+python python/plot_stability.py \
+    --input results/accuracy_inv_well-conditioned.csv \
+    --output results/images/accuracy_inv_well-conditioned.pdf
+
+python python/plot_stability.py \
+    --input results/accuracy_inv_ill-conditioned.csv \
+    --output results/images/accuracy_inv_ill-conditioned.pdf
+
+python python/plot_stability.py \
+    --input results/accuracy_exp_well-conditioned.csv \
+    --output results/images/accuracy_exp_well-conditioned.pdf
+
+python python/plot_stability.py \
+    --input results/accuracy_exp_ill-conditioned.csv \
+    --output results/images/accuracy_exp_ill-conditioned.pdf
+
+# Orthogonality plots
+python python/plot_orthogonality.py \
+    --input results/orthogonality_inv_well-conditioned.csv \
+    --output results/images/orthogonality_inv_well-conditioned.pdf
+
+python python/plot_orthogonality.py \
+    --input results/orthogonality_inv_ill-conditioned.csv \
+    --output results/images/orthogonality_inv_ill-conditioned.pdf
+
+python python/plot_orthogonality.py \
+    --input results/orthogonality_exp_well-conditioned.csv \
+    --output results/images/orthogonality_exp_well-conditioned.pdf
+
+python python/plot_orthogonality.py \
+    --input results/orthogonality_exp_ill-conditioned.csv \
+    --output results/images/orthogonality_exp_ill-conditioned.pdf
+```
+
+**Analysis Details:**
+- **Accuracy Analysis**: Measures the relative error of computed solutions against analytically known ground truth using synthetic diagonal matrices
+- **Orthogonality Analysis**: Quantifies the loss of orthogonality in Lanczos bases via ||I - V_k^H V_k||_F and measures basis drift between standard and regenerated bases
+- **Well-conditioned cases**: Test baseline algorithm performance under favorable numerical conditions
+- **Ill-conditioned cases**: Stress-test algorithms under challenging spectral conditions including nearly singular matrices and wide eigenvalue spreads
+
+### Complete Experimental Reproduction
+
+To reproduce all results:
+
+```bash
+# Create results directory
+mkdir -p results/images
+
+# Run all experiments (may take several hours)
+./scripts/run_all_experiments.sh  # If available, or execute individual commands above
+
+# Verify all expected output files exist
+ls results/*.csv
+ls results/images/*.pdf
+```
+
+The generated plots correspond directly to the figures referenced in the LaTeX report (`tex/report.tex`) and provide empirical validation of the theoretical analysis presented in the paper.

@@ -47,7 +47,7 @@ path = "src/bin/orthogonality.rs"
 opt-level = 3
 # Enable Fat Link-Time Optimization for maximum cross-crate optimization.
 # This increases compile times but can yield significant performance gains.
-# lto = "fat"
+lto = "fat"
 # Include debug information in the release binary. This allows for meaningful
 # backtraces on panics or crashes with minimal performance impact. Essential for long-running jobs.
 debug = true
