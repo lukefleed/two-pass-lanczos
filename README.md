@@ -280,15 +280,15 @@ cargo run --release --bin tradeoff -- \
 
 **Generate Plots:**
 ```bash
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs500k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs500k_rho3
 
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs50k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs50k_rho3
 
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs5k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs5k_rho3
 ```
@@ -312,7 +312,7 @@ cargo run --release --bin scalability -- \
 
 **Generate Plots:**
 ```bash
-python python/plot_scalability.py \
+python3 python/plot_scalability.py \
     --input results/scalability_k500_rho3.csv \
     --output-prefix results/images/scalability_k500_rho3
 ```
