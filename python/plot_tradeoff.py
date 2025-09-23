@@ -97,8 +97,9 @@ def create_plots(input_csv_path: str, output_prefix: str):
     )
 
     ax_time.set_xlabel("Number of Iterations (k)", fontsize=12)
-    ax_time.set_ylabel("Wall-Clock Time (seconds)", fontsize=12)
+    ax_time.set_ylabel("Wall-Clock Time (seconds, log scale)", fontsize=12)
     ax_time.set_title("Execution Time vs. Iteration Count", fontsize=14, fontweight='bold')
+    ax_time.set_yscale('log')
     ax_time.legend(fontsize=11)
     ax_time.tick_params(axis='both', which='major', labelsize=10)
     ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
