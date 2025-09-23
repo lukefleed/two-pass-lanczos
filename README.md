@@ -252,43 +252,43 @@ All instances use `rho=3` as the structural parameter for network topology gener
 ```bash
 # Large-scale problem (500K arcs)
 cargo run --release --bin tradeoff -- \
-    --arcs 500000 \
-    --rho 3 \
-    --k-min 50 \
-    --k-max 1000 \
+    --instance-dir data/arcs500k_rho3 \
+    --output results/tradeoff_arcs500k_rho3.csv \
+    --k-start 50 \
+    --k-end 1000 \
     --k-step 50 \
-    --output results/tradeoff_arcs500k_rho3.csv
+    --num-samples 5
 
 # Medium-scale problem (50K arcs)
 cargo run --release --bin tradeoff -- \
-    --arcs 50000 \
-    --rho 3 \
-    --k-min 50 \
-    --k-max 1000 \
+    --instance-dir data/arcs50k_rho3 \
+    --output results/tradeoff_arcs50k_rho3.csv \
+    --k-start 50 \
+    --k-end 1000 \
     --k-step 50 \
-    --output results/tradeoff_arcs50k_rho3.csv
+    --num-samples 5
 
 # Small-scale problem (5K arcs)
 cargo run --release --bin tradeoff -- \
-    --arcs 5000 \
-    --rho 3 \
-    --k-min 50 \
-    --k-max 1000 \
+    --instance-dir data/arcs5k_rho3 \
+    --output results/tradeoff_arcs5k_rho3.csv \
+    --k-start 50 \
+    --k-end 1000 \
     --k-step 50 \
-    --output results/tradeoff_arcs5k_rho3.csv
+    --num-samples 5
 ```
 
 **Generate Plots:**
 ```bash
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs500k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs500k_rho3
 
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs50k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs50k_rho3
 
-python python/plot_tradeoff.py \
+python3 python/plot_tradeoff.py \
     --input results/tradeoff_arcs5k_rho3.csv \
     --output-prefix results/images/tradeoff_arcs5k_rho3
 ```
@@ -312,7 +312,7 @@ cargo run --release --bin scalability -- \
 
 **Generate Plots:**
 ```bash
-python python/plot_scalability.py \
+python3 python/plot_scalability.py \
     --input results/scalability_k500_rho3.csv \
     --output-prefix results/images/scalability_k500_rho3
 ```
