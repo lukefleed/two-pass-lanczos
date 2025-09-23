@@ -90,8 +90,8 @@ struct AccuracyResult {
     relative_error_standard: f64,
     /// Relative error of the two-pass method vs. ground truth.
     relative_error_two_pass: f64,
-    /// L2-norm of the difference between the two final solution vectors.
-    solution_deviation_l2: f64,
+    /// Relative deviation between the two solution vectors.
+    relative_solution_deviation: f64,
 }
 
 /// Creates a synthetic sparse diagonal matrix with controlled eigenvalues.
@@ -305,7 +305,8 @@ fn main() -> Result<()> {
             k,
             relative_error_standard: (&x_k_standard - &x_true).norm_l2() / x_true_norm,
             relative_error_two_pass: (&x_k_two_pass - &x_true).norm_l2() / x_true_norm,
-            solution_deviation_l2: (&x_k_standard - &x_k_two_pass).norm_l2(),
+            relative_solution_deviation: (&x_k_standard - &x_k_two_pass).norm_l2()
+                / x_k_standard.norm_l2(),
         });
     }
 

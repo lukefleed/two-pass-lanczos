@@ -21,3 +21,4 @@ data/scalability
 *.synctex.gz
 *.toc
 .github/instructions/guidelines.instructions.md
+.github/instructions/rust.instructions.md

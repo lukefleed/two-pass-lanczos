@@ -93,13 +93,13 @@ def create_plot(input_path: str, output_path: str):
 
     # --- Subplot 2: Direct Solution Deviation ---
     ax2.plot(
-        df["k"], df["solution_deviation_l2"],
+        df["k"], df["relative_solution_deviation"],
         # Use a raw string for the LaTeX label
-        label=r"Deviation $\|x_k - x'_k\|_2$",
+        label=r"Relative Deviation $\|x_k - x'_k\|_2 / \|x_k\|_2$",
         marker='.', linestyle=':', color='C2'
     )
     ax2.set_xlabel("Number of Iterations (k)", fontsize=12)
-    ax2.set_ylabel("Solution Deviation", fontsize=12)
+    ax2.set_ylabel("Relative Solution Deviation", fontsize=12)
     ax2.set_yscale('log')
     ax2.legend(fontsize=11)
     ax2.grid(True, which='both', linestyle='--', linewidth=0.5)
