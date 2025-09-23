@@ -357,67 +357,66 @@ The first experiment was designed to validate the theoretical complexity analysi
 
 Based on our model, we formulate two distinct hypotheses. First, concerning memory usage, we expect the peak resident set size of the standard algorithm to exhibit linear growth with respect to the iteration count $k$, consistent with its $O(nk)$ complexity derived from storing the basis $\mathbf{V}_k$. On the other hand, we expect the two-pass method to maintain a nearly constant memory footprint, consistent with its $O(n)$ complexity. Second, regarding computational time, the model based on floating-point operations predicts that the wall-clock time for the two-pass method should be approximately double that of the one-pass method, due to the doubled number of matrix-vector products. However, this model neglects the cost of memory access. A more realistic hypothesis is that the actual performance will be governed by the relation between the additional arithmetic operations and the algorithms' memory access patterns. For problem sizes where the basis matrix $\mathbf{V}_k$ is too large to fit in processor caches, the cost of memory bandwidth may dominate, reducing the observable time penalty for the two-pass method.
 
-We conducted this experiment using several KKT system instances of fixed dimension $n$ and varying sparsity. For each instance, we executed both algorithms while varying the number of iterations $k$ across a predefined range, recording the peak RSS and the total wall-clock time for each run.
+We conducted this experiment using several KKT system instances of fixed dimension $n$. For each instance and iteration count $k$, we executed multiple independent samples to ensure statistical robustness. The peak RSS and total wall-clock time were recorded for each sample. These measurements were then aggregated to compute the median, as a measure of central tendency, and the standard deviation, to quantify the variability of the results.
 
 \subsubsection{Results}
-The memory consumption results, presented in Figures \ref{fig:large_scale_memory}, \ref{fig:medium_scale_memory}, and \ref{fig:small_scale_memory}, provide strong empirical support for the complexity analysis across all problem scales. The standard one-pass algorithm exhibits a linear growth in memory usage with respect to the iteration count $k$. This behavior stems directly from the need to store the entire basis matrix $\mathbf{V}_k \in \mathbb{C}^{n \times k}$, a requirement with a cost of $O(nk)$ \cite{golub2013matrix}. In contrast, the two-pass algorithm maintains a constant memory footprint, independent of $k$. This aligns with its theoretical $O(n)$ memory complexity, as the algorithm only requires simultaneous storage for a small, constant number of $n$-dimensional vectors.
-
-A closer analysis of Figure \ref{fig:medium_scale_memory}, however, reveals a subtler dynamic. For a low number of iterations, the memory consumption of the two-pass method is slightly higher than that of the standard method, with a crossover point observed around $k \approx 300$. This phenomenon does not contradict the theoretical model but rather clarifies the constants it abstracts. Our model, $M(n, k) = M_{\text{base}}(n) + M_{\text{alg}}(n, k)$, remains valid, but the base cost, $M_{\text{base}}(n)$, is not identical for the two algorithms. The two-pass method incurs a slightly larger fixed memory overhead. This overhead arises from the need to store a copy of the initial vector $\mathbf{b}$ for the second pass, as well as the arrays for the scalar coefficients $\{\alpha_j\}$, $\{\beta_j\}$, and the solution vector $\mathbf{y}_k$. For small values of $k$, the storage cost for the basis in the standard method, $O(nk)$, is less than this fixed overhead. As $k$ increases, however, the $O(nk)$ term rapidly dominates.
+The experimental results are presented in Figures \ref{fig:large_scale_memory} through \ref{fig:small_scale_time}. The plots show the median of multiple independent samples for each configuration, with shaded bands representing $\pm 1$ standard deviation to quantify measurement variability.
 
 \begin{figure}[h!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs500k_rho3_memory.pdf}
-        \caption{Peak memory usage for a large-scale problem (500k arcs).}
+        \caption{Median peak memory usage for a large-scale problem (500k arcs). Shaded regions denote $\pm 1$ standard deviation.}
         \label{fig:large_scale_memory}
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs500k_rho3_time.pdf}
-        \caption{Wall-clock time for a large-scale problem (500k arcs).}
+        \caption{Median wall-clock time for a large-scale problem (500k arcs). Shaded regions denote $\pm 1$ standard deviation.}
         \label{fig:large_scale_time}
     \end{minipage}
 \end{figure}
 
-For the large-scale instance with 500k arcs, shown in Figure \ref{fig:large_scale_time}, the wall-clock time of the two-pass method is only marginally greater than that of the one-pass method. This observation appears to contradict the expectation of doubled work \cite{frommer2008matrix}. The discrepancy arises because for very large $n$, the dominant cost shifts from sparse matrix-vector products to dense vector operations during solution reconstruction. Both the final matrix-vector product $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$ in the one-pass method and the incremental accumulation in the two-pass method have a complexity of $O(nk)$. When $\mathbf{V}_k$ is too large to fit in any CPU cache, these operations become limited by main memory bandwidth. This large, common cost term dominates the total execution time for both methods and masks the effect of the doubled sparse matrix-vector products.
+For the large-scale problem instance, the memory consumption profiles in Figure \ref{fig:large_scale_memory} confirm the theoretical complexity models. The standard one-pass algorithm exhibits a linear growth in median memory usage, consistent with its $O(nk)$ complexity. The standard deviation is negligible, reflecting a deterministic allocation profile dominated by the storage of the $n \times k$ basis matrix $\mathbf{V}_k$. The two-pass algorithm maintains a constant median memory footprint, aligning with its $O(n)$ complexity, but displays a measurable, non-zero standard deviation. This variability is not algorithmic but systemic, arising from the dynamic interaction between the program's fine-grained memory requests and the operating system's memory manager. The analysis of wall-clock time for the large-scale instance, presented in Figure \ref{fig:large_scale_time}, reveals a critical insight into the performance of these algorithms on modern hardware. The median execution times of both methods are nearly identical, and their uncertainty bands exhibit substantial overlap across the entire range of $k$. This indicates that there is no statistically significant performance difference between them, a result that seemingly contradicts the theoretical model predicting a factor-of-two slowdown for the two-pass method due to doubled matrix-vector products.
+
+This convergence in performance is a direct consequence of the system operating in a memory bandwidth-bound regime. For a problem of this scale, the memory footprint of the core data structures far exceeds the capacity of the CPU caches. As a result, the execution time of nearly all vector operations, both sparse and dense, is dominated by the latency of data transfer from main memory, rather than the cost of floating-point arithmetic. The final solution reconstruction in the standard method, $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$, requires streaming the entire $n \times k$ basis from DRAM, a costly operation. While the two-pass method performs twice as many sparse matrix-vector products, an operation also bound by memory access, it avoids the large, monolithic memory transfer of the final reconstruction. In this regime, the high, common cost of memory access for both algorithms becomes the primary bottleneck, diminishing the relative impact of the additional arithmetic operations. The theoretical computational penalty of the two-pass method is thus effectively masked by the architectural limitations of memory bandwidth.
 
 \begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs50k_rho3_memory.pdf}
-        \caption{Peak memory usage for a medium-scale problem (50k arcs).}
+        \caption{Median peak memory usage for a medium-scale problem (50k arcs). The crossover point highlights the initial overhead of the two-pass method.}
         \label{fig:medium_scale_memory}
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs50k_rho3_time.pdf}
-        \caption{Wall-clock time for a medium-scale problem (50k arcs).}
+        \caption{Median wall-clock time for a medium-scale problem (50k arcs). The two-pass method is consistently faster due to better cache utilization.}
         \label{fig:medium_scale_time}
     \end{minipage}
 \end{figure}
 
-As we reduce the problem dimension, this dynamic changes. For the medium-scale instance with 50k arcs, the results in Figure \ref{fig:medium_scale_time} show that the two-pass method is consistently faster than the standard one-pass method. This performance reversal originates from the memory access patterns of the algorithms. The standard algorithm's reconstruction step accesses a large contiguous block of memory for $\mathbf{V}_k$, generating an inefficient access pattern with poor data locality that leads to a high rate of cache misses. The two-pass algorithm, by contrast, operates on a small working set of vectors at each step. The processor's cache hierarchy manages this small working set effectively, resulting in a high cache hit rate and superior performance.
+In the medium-scale instance, shown in Figure \ref{fig:medium_scale_memory}, the memory profiles remain consistent with the theoretical models. A crossover point is visible, where for a low number of iterations ($k < 100$), the fixed memory overhead of the two-pass method (for storing $\mathbf{b}$, $\{\alpha_j, \beta_j\}$, and $\mathbf{y}_k$) exceeds the growing $O(nk)$ cost of the standard method's basis. As $k$ increases, the $O(nk)$ term dominates, and the standard method's memory usage surpasses that of the two-pass variant. Figure \ref{fig:medium_scale_time} reveals a performance inversion. The median execution time of the two-pass method is now consistently lower than that of the standard algorithm, and their uncertainty bands are clearly separated for $k > 400$. This transition to a cache-bound regime occurs because the basis matrix $\mathbf{V}_k$ becomes too large to reside in CPU caches, causing a high cache miss rate during the final solution reconstruction $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$. The two-pass method, with its small, cache-resident working set, avoids this penalty, and the resulting performance gain from higher cache efficiency outweighs the cost of additional arithmetic operations.
 
 \begin{figure}[ht!]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs5k_rho3_memory.pdf}
-        \caption{Peak memory usage for a small-scale problem (5k arcs).}
+        \caption{Median peak memory usage for a small-scale problem (5k arcs).}
         \label{fig:small_scale_memory}
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/tradeoff_arcs5k_rho3_time.pdf}
-        \caption{Wall-clock time for a small-scale problem (5k arcs).}
+        \caption{Median wall-clock time for a small-scale problem (5k arcs). The cache advantage of the two-pass method is maximized.}
         \label{fig:small_scale_time}
     \end{minipage}
 \end{figure}
 
-This effect becomes even more pronounced for the small-scale instance with 5k arcs, shown in Figure \ref{fig:small_scale_time}. Here, the working set of the two-pass method can reside almost entirely within the fastest L1 and L2 caches, maximizing its performance advantage. In this cache-friendly regime, the performance gain from eliminating cache misses far outweighs the cost of the additional matrix-vector products.
-
+The trends observed in the medium-scale instance are maximized for the small-scale problem, as shown in Figures \ref{fig:small_scale_memory} and \ref{fig:small_scale_time}. The memory usage of the standard method is nearly constant across the tested range of $k$, as the total size of the basis matrix remains small enough to not significantly alter the process's total memory footprint relative to the base cost. The performance advantage of the two-pass method, shown in Figure \ref{fig:small_scale_time}, is pronounced. In this regime, the working set of the two-pass algorithm can be accommodated by the fastest levels of the cache hierarchy, leading to a significant and consistent reduction in wall-clock time compared to the standard method.
 \subsection{Scalability with Problem Dimension}
 \label{sec:exp_scalability}
 The second experiment assesses how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, we fix the number of iterations $k$ to a constant value and generate a family of test matrices of increasing dimension. The network topologies are constructed to maintain a comparable sparsity across all instances. We hypothesize that the memory advantage of the two-pass algorithm will become increasingly significant as $n$ grows. This should manifest as a substantially steeper slope in the memory usage plot for the one-pass method, reflecting its linear dependence on the product $nk$, compared to a gentler slope for the two-pass method, which depends only linearly on $n$.
