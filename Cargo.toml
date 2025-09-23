@@ -39,6 +39,11 @@ name = "tradeoff"
 path = "src/bin/tradeoff.rs"
 
 [[bin]]
+name = "dense_tradeoff"
+path = "src/bin/dense_tradeoff.rs"
+
+
+[[bin]]
 name = "orthogonality"
 path = "src/bin/orthogonality.rs"
 
