@@ -418,6 +418,22 @@ This hypothesis is further supported by the results from the medium and small sc
 
 Finally, for the small-scale problem shown in Figure \ref{fig:small_scale_time}, the performance of both algorithms is again nearly indistinguishable. In this regime, the problem is so small that the entire working set for both algorithms, including the growing basis $\mathbf{V}_k$ of the standard method, fits comfortably within the CPU's cache. Memory access is no longer a bottleneck for either approach. Consequently, performance is governed by raw computational cost. Since the matrix-vector products for such a small `n` are extremely cheap, the doubled cost for the two-pass method is negligible compared to other fixed overheads, leading to nearly identical wall-clock times.
 
+\subsubsection{Dense Matrix}
+To confirm our hypothesis that the surprising performance of the two-pass method on sparse matrices is due to its superior memory access patterns, we conducted a final experiment using a dense matrix. For a dense matrix, the computational cost of the matrix-vector product, which scales as $O(n^2)$, is expected to be the dominant factor in the total execution time. In this compute-bound regime, the benefits of cache efficiency from vector operations should become negligible. We therefore hypothesize that the performance of the algorithms will revert to the simple model based on operation count, with the wall-clock time of the two-pass method being approximately double that of the standard one-pass method.
+
+For this test, we generated a dense, symmetric random matrix of dimension $n=10000$ and measured the wall-clock time for both algorithms as a function of the iteration count, $k$.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.6\linewidth]{../results/images/dense-tradeoff.pdf}
+    \caption{Wall-clock time vs. iteration count for a dense matrix ($n=10000$). This time we don't need to use the log scale on the y-axis, as the times are much larger.}
+    \label{fig:dense_tradeoff_time}
+\end{figure}
+
+The results, presented in Figure \ref{fig:dense_tradeoff_time}, align perfectly with this hypothesis. The execution time for both methods scales linearly with the number of iterations, but the slope for the two-pass algorithm is almost exactly double that of the standard method. For example, at $k=1000$ iterations, the standard method takes approximately 70 seconds, while the two-pass method takes approximately 137 seconds.
+
+This outcome provides conclusive evidence for our analysis. When the matrix-vector product is computationally dominant, the cost of the doubled products in the two-pass method dictates its performance, resulting in a nearly 2x slowdown. This confirms that the competitive, and sometimes superior, performance of the two-pass method on sparse matrices is indeed an artifact of its more favorable memory access patterns and superior cache efficiency, which mitigate the cost of its additional arithmetic operations.
+
 \subsection{Scalability with Problem Dimension}
 \label{sec:exp_scalability}
 The second experiment assesses how the resource requirements of both algorithms scale with the problem dimension $n$. For this test, we fix the number of iterations $k$ to a constant value and generate a family of test matrices of increasing dimension. The network topologies are constructed to maintain a comparable sparsity across all instances. We hypothesize that the memory advantage of the two-pass algorithm will become increasingly significant as $n$ grows. This should manifest as a substantially steeper slope in the memory usage plot for the one-pass method, reflecting its linear dependence on the product $nk$, compared to a gentler slope for the two-pass method, which depends only linearly on $n$.
