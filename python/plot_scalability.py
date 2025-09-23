@@ -99,11 +99,12 @@ def create_plots(input_csv_path: str, output_prefix: str):
     )
 
     ax_time.set_xlabel("Problem Dimension (n)", fontsize=12)
-    ax_time.set_ylabel("Wall-Clock Time (seconds)", fontsize=12)
+    ax_time.set_ylabel("Wall-Clock Time (seconds, log scale)", fontsize=12)
     ax_time.set_title("Time Scalability vs. Problem Dimension", fontsize=14, fontweight='bold')
     ax_time.legend(fontsize=11)
     ax_time.tick_params(axis='both', which='major', labelsize=10)
     ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax_time.set_yscale('log')
 
     time_plot_path = f"{output_prefix}_time.pdf"
     fig_time.savefig(time_plot_path, bbox_inches='tight')
