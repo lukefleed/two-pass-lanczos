@@ -8,13 +8,16 @@ creates two PDF plots:
 2. Wall-Clock Time (s) vs. Problem Dimension (n)
 
 The plots compare the performance of the 'standard' and 'two-pass' Lanczos
-variants as the problem size increases.
+variants as the problem size increases, including uncertainty bands based on
+statistical sampling.
 """
 
 import argparse
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+from typing import Any
 
 def create_plots(input_csv_path: str, output_prefix: str):
     """
@@ -22,7 +25,7 @@ def create_plots(input_csv_path: str, output_prefix: str):
 
     # Arguments
 
-    * `input_csv_path` - Path to the input CSV file containing the results.
+    * `input_csv_path` - Path to the input CSV file containing the aggregated results.
 
     * `output_prefix` - The base path and filename for the output plots.
                         For example, 'report/figures/scalability' will produce
@@ -49,21 +52,37 @@ def create_plots(input_csv_path: str, output_prefix: str):
     # --- 1. Memory Scalability Plot ---
     fig_mem, ax_mem = plt.subplots(figsize=(8, 6))
 
+    # Explicitly cast to float to ensure correct type inference, then convert to NumPy.
+    n_standard = df_standard["n"].to_numpy()
+    rss_median_standard = df_standard["rss_kb_median"].astype(float).to_numpy() / 1024
+    rss_stddev_standard = df_standard["rss_kb_stddev"].astype(float).to_numpy() / 1024
+
+    n_two_pass = df_two_pass["n"].to_numpy()
+    rss_median_two_pass = df_two_pass["rss_kb_median"].astype(float).to_numpy() / 1024
+    rss_stddev_two_pass = df_two_pass["rss_kb_stddev"].astype(float).to_numpy() / 1024
+
     ax_mem.plot(
-        df_standard["n"],
-        df_standard["rss_kb"] / 1024,  # Convert KB to MB
+        n_standard, rss_median_standard,
         label="Standard Lanczos (One-Pass)",
-        marker='o',
-        linestyle='-',
-        color='C0'
+        marker='o', linestyle='-', color='C0'
     )
+    ax_mem.fill_between(
+        n_standard,
+        rss_median_standard - rss_stddev_standard,  # type: ignore
+        rss_median_standard + rss_stddev_standard,  # type: ignore
+        color='C0', alpha=0.2
+    )
+
     ax_mem.plot(
-        df_two_pass["n"],
-        df_two_pass["rss_kb"] / 1024,
+        n_two_pass, rss_median_two_pass,
         label="Two-Pass Lanczos",
-        marker='x',
-        linestyle='--',
-        color='C1'
+        marker='x', linestyle='--', color='C1'
+    )
+    ax_mem.fill_between(
+        n_two_pass,
+        rss_median_two_pass - rss_stddev_two_pass,  # type: ignore
+        rss_median_two_pass + rss_stddev_two_pass,  # type: ignore
+        color='C1', alpha=0.2
     )
 
     ax_mem.set_xlabel("Problem Dimension (n)", fontsize=12)
@@ -81,21 +100,35 @@ def create_plots(input_csv_path: str, output_prefix: str):
     # --- 2. Time Scalability Plot ---
     fig_time, ax_time = plt.subplots(figsize=(8, 6))
 
+    # Explicitly cast to float to ensure correct type inference.
+    time_median_standard = df_standard["time_s_median"].astype(float).to_numpy()
+    time_stddev_standard = df_standard["time_s_stddev"].astype(float).to_numpy()
+
+    time_median_two_pass = df_two_pass["time_s_median"].astype(float).to_numpy()
+    time_stddev_two_pass = df_two_pass["time_s_stddev"].astype(float).to_numpy()
+
     ax_time.plot(
-        df_standard["n"],
-        df_standard["time_s"],
+        n_standard, time_median_standard,
         label="Standard Lanczos (One-Pass)",
-        marker='o',
-        linestyle='-',
-        color='C0'
+        marker='o', linestyle='-', color='C0'
     )
+    ax_time.fill_between(
+        n_standard,
+        time_median_standard - time_stddev_standard,  # type: ignore
+        time_median_standard + time_stddev_standard,  # type: ignore
+        color='C0', alpha=0.2
+    )
+
     ax_time.plot(
-        df_two_pass["n"],
-        df_two_pass["time_s"],
+        n_two_pass, time_median_two_pass,
         label="Two-Pass Lanczos",
-        marker='x',
-        linestyle='--',
-        color='C1'
+        marker='x', linestyle='--', color='C1'
+    )
+    ax_time.fill_between(
+        n_two_pass,
+        time_median_two_pass - time_stddev_two_pass,  # type: ignore
+        time_median_two_pass + time_stddev_two_pass,  # type: ignore
+        color='C1', alpha=0.2
     )
 
     ax_time.set_xlabel("Problem Dimension (n)", fontsize=12)
