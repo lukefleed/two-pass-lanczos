@@ -1,6 +1,6 @@
 //! Dense matrix performance analysis for the memory-computation trade-off.
 //!
-//! This executable serves as a "proof-of-concept" to validate the performance
+//! This executable serves to validate the performance
 //! analysis from the main report. It measures the execution time of both Lanczos
 //! variants on a dense matrix, where the O(n^2) cost of the matrix-vector product
 //! is expected to be the dominant computational factor. This helps confirm that
@@ -219,7 +219,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
     Ok(())
 }
 
-/// Helper to assemble a sparse `faer::SparseColMat` from Lanczos coefficients.
+/// Helper to assemble a sparse [`faer::sparse::SparseColMat`] from Lanczos coefficients.
 fn assemble_tridiagonal_sparse(alphas: &[f64], betas: &[f64]) -> Result<SparseColMat<usize, f64>> {
     let steps = alphas.len();
     if steps == 0 {

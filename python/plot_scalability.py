@@ -67,11 +67,12 @@ def create_plots(input_csv_path: str, output_prefix: str):
     )
 
     ax_mem.set_xlabel("Problem Dimension (n)", fontsize=12)
-    ax_mem.set_ylabel("Peak Memory Usage (MB)", fontsize=12)
+    ax_mem.set_ylabel("Peak Memory Usage (MB, log scale)", fontsize=12)
     ax_mem.set_title("Memory Scalability vs. Problem Dimension", fontsize=14, fontweight='bold')
     ax_mem.legend(fontsize=11)
     ax_mem.tick_params(axis='both', which='major', labelsize=10)
     ax_mem.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax_mem.set_yscale('log')
 
     memory_plot_path = f"{output_prefix}_memory.pdf"
     fig_mem.savefig(memory_plot_path, bbox_inches='tight')
@@ -104,7 +105,7 @@ def create_plots(input_csv_path: str, output_prefix: str):
     ax_time.legend(fontsize=11)
     ax_time.tick_params(axis='both', which='major', labelsize=10)
     ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
-    ax_time.set_yscale('log')
+    # ax_time.set_yscale('log')
 
     time_plot_path = f"{output_prefix}_time.pdf"
     fig_time.savefig(time_plot_path, bbox_inches='tight')

@@ -49,7 +49,7 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\title{A Memory and Cache Efficient Two-Pass Lanczos Algorithm}
+\title{Low Memory and Cache Efficient Two-Pass Lanczos}
 \author{Luca Lombardo}
 \date{}
 
@@ -426,7 +426,7 @@ For this test, we generated a dense, symmetric random matrix of dimension $n=100
 \begin{figure}[h!]
     \centering
     \includegraphics[width=0.6\linewidth]{../results/images/dense-tradeoff.pdf}
-    \caption{Wall-clock time vs. iteration count for a dense matrix ($n=10000$). This time we don't need to use the log scale on the y-axis, as the times are much larger.}
+    \caption{Wall-clock time vs. iteration count for a dense matrix ($n=10000$)}
     \label{fig:dense_tradeoff_time}
 \end{figure}
 
@@ -446,7 +446,7 @@ We fixed the number of iterations at $k=500$ and analyzed the performance of bot
     \begin{minipage}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../results/images/scalability_k500_rho3_memory.pdf}
-        \caption{Peak memory usage vs. problem dimension $n$ for a fixed number of iterations ($k=500$), illustrating the significant $O(nk)$ cost of the standard method.}
+        \caption{Peak memory usage vs. problem dimension $n$ for a fixed number of iterations ($k=500$), illustrating the significant $O(nk)$ cost of the standard method. Note that the y-axis is on a logarithmic scale.}
         \label{fig:scalability_memory}
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
@@ -457,9 +457,9 @@ We fixed the number of iterations at $k=500$ and analyzed the performance of bot
     \end{minipage}
 \end{figure}
 
-The memory consumption profiles in Figure \ref{fig:scalability_memory} show a stark contrast between the two methods, confirming our hypothesis. The memory usage of both methods grows linearly with $n$, but the slope of this growth differs significantly. The two-pass method exhibits a gentle slope, corresponding to the linear growth of the base memory requirement, $M_{\text{base}}(n)$. The standard method, in contrast, shows a much steeper slope, reflecting the combined cost of the base memory and the algorithm-specific term for storing the basis, $M_{\text{std}}(n,k) = M_{\text{base}}(n) + M_{\text{alg, std}}(n, k)$.
+The memory consumption profiles in Figure \ref{fig:scalability_memory} show a stark contrast between the two methods, confirming our hypothesis. The memory usage of both methods grows linearly\footnote{Note that the plot uses a logarithmic scale for the y-axis to better visualize the differences.} with $n$, but the slope of this growth differs significantly. The two-pass method exhibits a gentle slope, corresponding to the linear growth of the base memory requirement, $M_{\text{base}}(n)$. The standard method, in contrast, shows a much steeper slope, reflecting the combined cost of the base memory and the algorithm-specific term for storing the basis, $M_{\text{std}}(n,k) = M_{\text{base}}(n) + M_{\text{alg, std}}(n, k)$.
 
-In Table \ref{tab:scalability_data}, we provide the raw data underlying the memory plot. The memory usage of the two-pass method serves as a stable empirical baseline for $M_{\text{base}}(n)$. The final column, representing the difference in memory consumption, effectively isolates the cost of storing the basis matrix $\mathbf{V}_k$. A linear regression performed on this column's data yields a growth rate of approximately $3.81$ MB per 1000 units of increase in $n$, which corresponds to 3998 bytes per unit $n$. This observed rate aligns remarkably well with the theoretical rate predicted by our model, which is $k \cdot s_d = 500 \cdot 8 = 4000$ bytes per unit $n$.
+In Table \ref{tab:scalability_data}, we provide the raw data underlying the memory plot. The memory usage of the two-pass method serves as a stable empirical baseline for $M_{\text{base}}(n)$. The final column, representing the difference in memory consumption, isolates the cost of storing the basis matrix $\mathbf{V}_k$. A linear regression performed on this column's data yields a growth rate of approximately $3.82$ MB per 1000 units of increase in $n$, which corresponds to 4008 bytes per unit $n$. This observed rate aligns remarkably well with the theoretical rate predicted by our model, which is $k \cdot s_d = 500 \cdot 8 = 4000$ bytes per unit $n$.
 
 \begin{table}[ht!]
     \centering
@@ -467,16 +467,16 @@ In Table \ref{tab:scalability_data}, we provide the raw data underlying the memo
         \hline
         \multicolumn{1}{c}{\textbf{Dimension ($n$)}} & \multicolumn{1}{c}{\textbf{Standard (MB)}} & \multicolumn{1}{c}{\textbf{Two-Pass (MB)}} & \multicolumn{1}{c}{\textbf{Difference (MB)}} \\
         \hline
-        50,365                                       & 270.4                                      & 141.8                                      & 128.6                                        \\
+        50,365                                       & 270.4                                      & 141.8                                      & 128.5                                        \\
         100,516                                      & 467.4                                      & 147.2                                      & 320.2                                        \\
-        150,632                                      & 666.3                                      & 155.6                                      & 510.7                                        \\
+        150,632                                      & 666.3                                      & 155.6                                      & 510.6                                        \\
         200,730                                      & 861.2                                      & 157.9                                      & 703.3                                        \\
         250,816                                      & 1057.9                                     & 163.2                                      & 894.7                                        \\
         300,894                                      & 1258.6                                     & 174.8                                      & 1083.8                                       \\
         350,966                                      & 1451.4                                     & 175.2                                      & 1276.2                                       \\
         401,033                                      & 1648.2                                     & 179.2                                      & 1469.0                                       \\
         451,095                                      & 1844.8                                     & 184.6                                      & 1660.2                                       \\
-        501,155                                      & 2041.5                                     & 190.0                                      & 1851.5                                       \\
+        501,155                                      & 2041.5                                     & 190.0                                      & 1851.6                                       \\
         \hline
     \end{tabular}
     \caption{Peak memory usage (RSS) in megabytes for a fixed number of iterations ($k=500$). The difference isolates the memory cost of the basis matrix $\mathbf{V}_k$ in the standard algorithm.}
@@ -580,6 +580,7 @@ Finally, we test $f(z) = z^{-1}$ on a symmetric, indefinite matrix $\mathbf{A}$ 
 Figure \ref{fig:acc_inv_ill} illustrates this challenging scenario. The error plot shows three distinct phases. Initially, the error stagnates as the Krylov subspace fails to capture the problematic near-null space of $\mathbf{A}$. Subsequently, as the Lanczos process begins to approximate the near-zero eigenvalue, the projected matrix $\mathbf{T}_k$ becomes severely ill-conditioned. This induces a period of erratic, non-monotonic error behaviour, as the inversion of $\mathbf{T}_k$ becomes numerically unstable \cite{golub2013matrix}. Critically, this instability affects both methods identically. Finally, as $k$ becomes sufficiently large, the finite-termination property of the Lanczos method for linear systems comes into effect \cite{saad2003iterative}. The Krylov subspace becomes rich enough to construct a highly accurate polynomial approximant for $z^{-1}$, and the error converges abruptly. Throughout this entire process, the solutions from the one-pass and two-pass methods remain numerically close, with a relative deviation on the order of $10^{-16}$. This is the strongest evidence that the regeneration process is not a source of error; the two-pass algorithm faithfully reproduces the behaviour of the standard method, even under these extreme conditions. The basis analysis in Figure \ref{fig:ortho_inv_ill} confirms this finding. The severe loss of orthogonality observed coincides with the period of erratic error behavior, affirming that the instability is an intrinsic property of the Lanczos method applied to a nearly singular problem, which the two-pass algorithm correctly reproduces.
 
 % ===================================================================
+
 \section{Conclusion and Further Work}
 % ===================================================================
 Our analysis of the two-pass Lanczos algorithm confirms its effectiveness as a memory-efficient alternative to the standard one-pass method. The experiments show that the standard algorithm's memory usage grows linearly with the iteration count $k$, as predicted by its $O(nk)$ complexity. In contrast, the two-pass variant maintains a constant $O(n)$ memory footprint, making it viable for problems where storing the full Lanczos basis is not feasible.
