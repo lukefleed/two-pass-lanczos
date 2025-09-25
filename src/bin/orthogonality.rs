@@ -1,10 +1,7 @@
 //! Orthogonality analysis for Lanczos basis stability measurement.
 //!
 //! This executable analyzes the numerical stability of Lanczos basis vectors by measuring
-//! orthogonality loss and basis drift between standard and two-pass methods. Computes
-//! ||I - V_k^H V_k||_F to quantify orthogonality deterioration and ||V_k - V'_k||_F
-//! to measure basis regeneration accuracy. Tests different spectral conditions to
-//! assess stability under various numerical challenges.
+//! orthogonality loss and basis drift between standard and two-pass methods.
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
@@ -41,8 +38,6 @@ enum ProblemScenario {
     /// from any function singularities.
     WellConditioned,
     /// An ill-conditioned problem with spectral properties
-    /// designed to challenge the numerical stability
-    /// of the Lanczos process.
     IllConditioned,
 }
 
@@ -82,24 +77,17 @@ struct OrthogonalityResult {
     /// The number of Lanczos iterations performed.
     k: usize,
     /// Orthogonality loss for the standard one-pass basis, measured as $\|I - V_k^H V_k\|_F$.
-    /// Note: `faer`'s `norm_l2` on a matrix computes the Frobenius norm.
+    /// Note: we use `faer`'s `norm_l2`
     ortho_loss_standard: f64,
     /// Orthogonality loss for the regenerated two-pass basis, measured as $\|I - V'_k^H V'_k\|_F$.
     ortho_loss_regenerated: f64,
     /// Numerical deviation (or "drift") between the two bases, measured as $\|V_k - V'_k\|_F$.
-    /// A small drift validates the numerical faithfulness of the regeneration process.
     basis_drift_fro: f64,
-    /// L2-norm of the difference between solution vectors computed with a dummy coefficient vector.
-    /// This metric links basis stability to the final solution space, confirming that
-    /// numerically similar bases produce similar outputs.
+    /// L2-norm of the difference between solution vectors
     solution_deviation_l2: f64,
 }
 
 /// Creates a synthetic sparse diagonal matrix with a controlled eigenvalue distribution.
-///
-/// This is a standard methodology in numerical analysis for creating test problems where the
-/// exact action of a matrix function $f(\mathbf{A})$ can be computed analytically to machine
-/// precision, providing an unambiguous ground truth for error analysis.
 fn create_diagonal_problem(
     n: usize,
     scenario: ProblemScenario,

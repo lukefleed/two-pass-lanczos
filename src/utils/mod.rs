@@ -9,7 +9,7 @@
 //!
 //! - **`perf`**: Contains platform-specific utilities for performance analysis.
 //!   Currently, it provides a function to read the peak resident set size (RSS)
-//!   on Linux systems, which is crucial for memory usage experiments.
+//!   on Linux systems.
 //!
 
 pub mod data_loader;
