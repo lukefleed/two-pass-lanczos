@@ -66,9 +66,7 @@
 {\setlength{\parskip}{0em}
 \tableofcontents}
 
-% ===================================================================
 \section{Introduction}
-% ===================================================================
 The computation of the action of a matrix function on a vector, an operation denoted as $\mathbf{x} = f(\mathbf{A})\mathbf{b}$, represents a fundamental task in numerical linear algebra and scientific computing \cite{golub2013matrix, frommer2008matrix}. For large, sparse Hermitian matrices, methods based on Krylov subspaces are standard. A foundational algorithm in this class is the Lanczos process, first introduced as a \emph{method of minimized iterations} for eigenvalue problems \cite{lanczos1950iteration}. Its standard implementation, however, encounters a severe practical limitation: the necessity of storing an ever-growing basis of Lanczos vectors. This memory requirement often becomes prohibitive for the large-scale problems encountered in practice \cite{golub2013matrix}.
 
 To address this memory bottleneck, we examine a simple and effective variant known as the two-pass Lanczos method \cite{frommer2008matrix}. This approach fundamentally alters the standard algorithm by separating the computation into two distinct phases. It first generates the projection of the matrix without storing the basis, and then regenerates the basis in a second pass to construct the final solution. This report provides an analysis of this method, focusing on the explicit trade-off it presents: a significant reduction in memory storage at the cost of an increased computational workload.
@@ -196,7 +194,6 @@ Finally, the matrix form \eqref{eq:lanczos_matrix_form} also confirms that $\mat
 This set of relations forms the computational basis for both the standard and the two-pass Lanczos algorithms.
 
 \section{The Two-Pass Lanczos Algorithm} \label{sec:two_pass_lanczos}
-% ===================================================================
 Having established the theoretical framework for the standard Lanczos process (section \ref{sec:lanczos_process}) and identified its principal limitation\footnote{the prohibitive memory cost of storing the basis vectors} we can now introduce a memory-efficient variant known as the two-pass Lanczos algorithm \cite{frommer2008matrix}. The algorithm resolves the memory constraint by decoupling the computation of the projected tridiagonal matrix $\mathbf{T}_k$ from the synthesis of the final solution vector $\mathbf{x}_k$.
 
 In this section, we provide a description of the two distinct phases of the algorithm: an initial pass to generate the coefficients of $\mathbf{T}_k$ without storing the basis, and a second pass to reconstruct the solution vector. We then present an analysis of the method's core trade-off, quantifying its memory savings against its increased computational cost.
@@ -319,10 +316,7 @@ The base component, $M_{\text{base}}(n)$, is common to both algorithms. It inclu
 
 % This separation of concerns also leads to a conceptually direct implementation. The algorithm relies on the repeated application of the standard Lanczos recurrence, whose numerical properties are well-understood \cite{golub2013matrix}. It avoids the need to derive and implement function-specific update formulas for the high-dimensional solution and auxiliary vectors, which might have different numerical stability properties. The two-pass strategy therefore provides a simple and broadly applicable technique for addressing the memory limitations of the standard one-pass Lanczos process.
 
-% ===================================================================
-
 \section{Numerical Experiments}
-% ===================================================================
 In this section, we present a series of numerical experiments designed to validate the theoretical analysis presented in \ref{sec:complexity} and to assess the practical performance of the two-pass Lanczos algorithm. Our investigation is structured into three distinct experiments. The first (Section \ref{sec:exp1}) validates the memory-versus-computation trade-off as a function of iteration count. The second (Section \ref{sec:exp_scalability}) assesses the scalability of both algorithms with respect to the problem dimension. The third (Section \ref{sec:exp_stability}) provides an analysis of numerical stability and accuracy across several challenging problem scenarios.
 
 \subsection{Experimental Setup and Performance Metrics}
@@ -579,10 +573,8 @@ Finally, we test $f(z) = z^{-1}$ on a symmetric, indefinite matrix $\mathbf{A}$ 
 
 Figure \ref{fig:acc_inv_ill} illustrates this scenario. The error plot shows three distinct phases. Initially, the error stagnates as the Krylov subspace fails to capture the problematic near-null space of $\mathbf{A}$. Subsequently, as the Lanczos process begins to approximate the near-zero eigenvalue, the projected matrix $\mathbf{T}_k$ becomes severely ill-conditioned. This induces a period of erratic, non-monotonic error behaviour, as the inversion of $\mathbf{T}_k$ becomes numerically unstable \cite{golub2013matrix}. Critically, this instability affects both methods identically. Finally, as $k$ becomes sufficiently large, the finite-termination property of the Lanczos method for linear systems comes into effect \cite{saad2003iterative}. The Krylov subspace becomes rich enough to construct a highly accurate polynomial approximant for $z^{-1}$, and the error converges abruptly. Throughout this entire process, the solutions from the one-pass and two-pass methods remain numerically close.  The basis analysis in Figure \ref{fig:ortho_inv_ill} confirms this finding. The severe loss of orthogonality observed coincides with the period of erratic error behavior, affirming that the instability is an intrinsic property of the Lanczos method applied to a nearly singular problem, which the two-pass algorithm correctly reproduces.
 
-% ===================================================================
 
 \section{Conclusion and Further Work}
-% ===================================================================
 Our analysis of the two-pass Lanczos algorithm confirms its effectiveness as a memory-efficient alternative to the standard one-pass method. The experiments show that the standard algorithm's memory usage grows linearly with the iteration count $k$, as predicted by its $O(nk)$ complexity. In contrast, the two-pass variant maintains a constant $O(n)$ memory footprint, making it viable for problems where storing the full Lanczos basis is not feasible.
 
 We also found that the expected twofold increase in runtime for the two-pass method often does not appear in practice. This happens because for large problems, memory bandwidth, not arithmetic, becomes the bottleneck. The standard method's final reconstruction step, $\mathbf{x}_k = \mathbf{V}_k \mathbf{y}_k$, accesses a large basis matrix that often does not fit in processor caches, leading to poor performance. The two-pass method, by operating on a small, fixed-size working set of vectors, shows superior cache efficiency that can offset the cost of its extra matrix-vector products. This effect was so pronounced in some of our tests that the two-pass method ran faster than the standard one. Our stability analysis also showed that the basis regeneration process is numerically sound. Both methods produced nearly identical solutions, even for ill-conditioned problems. The instabilities we observed in the nearly singular case were not a flaw of the two-pass method; they were an intrinsic property of the underlying Lanczos projection, which the two-pass algorithm correctly reproduced.
