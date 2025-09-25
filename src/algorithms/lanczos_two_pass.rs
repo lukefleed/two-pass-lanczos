@@ -8,13 +8,13 @@
 //! two separate phases:
 //!
 //! * **Pass One** ([`lanczos_pass_one`]): Runs the Lanczos recurrence to compute the
-//! tridiagonal matrix T_k coefficients (alphas and betas). Basis vectors are discarded
-//! after each iteration, maintaining constant memory usage.
+//!   tridiagonal matrix T_k coefficients (alphas and betas). Basis vectors are discarded
+//!   after each iteration, maintaining constant memory usage.
 //!
 //! * **Pass Two** ([`lanczos_pass_two`]): After solving the projected problem on T_k,
-//! re-executes the Lanczos recurrence using stored coefficients to regenerate basis
-//! vectors on demand. Accumulates the final solution incrementally without storing
-//! the full basis.
+//!   re-executes the Lanczos recurrence using stored coefficients to regenerate basis
+//!   vectors on demand. Accumulates the final solution incrementally without storing
+//!   the full basis.
 //!
 //! This approach trades doubled matrix-vector products (2k instead of k) for reduced
 //! memory footprint, making it suitable for large-scale problems where memory is
