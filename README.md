@@ -204,6 +204,15 @@ Particularly, we test _all_ the instances in the directories:
 - `data/2000/` - Single-commodity problems with 2000 nodes, downloaded from [here](https://commalab.di.unipi.it/files/Data/MCF/2000.tgz)
 - `data/3000/` - Single-commodity problems with 3000 nodes, downloaded from [here](https://commalab.di.unipi.it/files/Data/MCF/3000.tgz)
 
+You can download and extract these datasets using the following commands:
+
+```bash
+mkdir -p data/1000 data/2000 data/3000
+wget https://commalab.di.unipi.it/files/Data/MCF/1000.tgz -O - | tar -xz -C data/1000 --strip-components=1
+wget https://commalab.di.unipi.it/files/Data/MCF/2000.tgz -O - | tar -xz -C data/2000 --strip-components=1
+wget https://commalab.di.unipi.it/files/Data/MCF/3000.tgz -O - | tar -xz -C data/3000 --strip-components=1
+```
+
 ### Running All Tests
 
 ```bash
