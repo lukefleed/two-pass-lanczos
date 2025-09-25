@@ -29,7 +29,6 @@ def create_plot(input_csv_path: str, output_path: str):
     df_standard = df[df['variant'] == 'standard'].copy()
     df_two_pass = df[df['variant'] == 'two-pass'].copy()
 
-    # Set a professional plot style.
     plt.style.use('seaborn-v0_8-whitegrid')
 
     # --- Execution Time Plot ---

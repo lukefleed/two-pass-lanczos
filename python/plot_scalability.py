@@ -43,7 +43,6 @@ def create_plots(input_csv_path: str, output_prefix: str):
     df_standard = df[df['variant'] == 'standard'].copy()
     df_two_pass = df[df['variant'] == 'two-pass'].copy()
 
-    # Set a professional plot style consistent with other experiments.
     plt.style.use('seaborn-v0_8-whitegrid')
 
     # --- 1. Memory Scalability Plot ---

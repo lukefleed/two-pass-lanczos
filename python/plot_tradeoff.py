@@ -27,7 +27,6 @@ def create_plots(input_csv_path: str, output_prefix: str):
                         'tradeoff_memory.pdf' and 'tradeoff_time.pdf'.
     """
     try:
-        # Read the data using pandas.
         df = pd.read_csv(input_csv_path)
     except FileNotFoundError:
         print(f"Error: Input file not found at '{input_csv_path}'")
@@ -37,7 +36,6 @@ def create_plots(input_csv_path: str, output_prefix: str):
     df_standard = df[df['variant'] == 'standard'].copy()
     df_two_pass = df[df['variant'] == 'two-pass'].copy()
 
-    # Set a professional plot style.
     plt.style.use('seaborn-v0_8-whitegrid')
 
     # --- 1. Memory Usage Plot ---
@@ -69,7 +67,6 @@ def create_plots(input_csv_path: str, output_prefix: str):
     ax_mem.tick_params(axis='both', which='major', labelsize=10)
     ax_mem.grid(True, which='both', linestyle='--', linewidth=0.5)
 
-    # Ensure the y-axis starts at zero for better comparison.
     # ax_mem.set_ylim(bottom=0)
 
     memory_plot_path = f"{output_prefix}_memory.pdf"
@@ -104,7 +101,6 @@ def create_plots(input_csv_path: str, output_prefix: str):
     ax_time.tick_params(axis='both', which='major', labelsize=10)
     ax_time.grid(True, which='both', linestyle='--', linewidth=0.5)
 
-    # Ensure the y-axis starts at zero.
     # ax_time.set_ylim(bottom=0)
 
     time_plot_path = f"{output_prefix}_time.pdf"

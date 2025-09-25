@@ -139,9 +139,9 @@ where
     Ok(x_k)
 }
 
-/// A test-only variant of `lanczos_pass_two` that also returns the regenerated basis.
+/// A test-only variant of [`lanczos_pass_two`] that also returns the regenerated basis.
 ///
-/// This function is identical to `lanczos_pass_two` but additionally returns the full
+/// This function is identical to [`lanczos_pass_two`] but additionally returns the full
 /// regenerated basis matrix $\mathbf{V}'_k$. It is used only during testing
 /// and is used to verify the numerical stability and faithfulness of the regeneration process
 /// by allowing a direct comparison with the basis stored by [`crate::algorithms::lanczos::lanczos_standard`].
