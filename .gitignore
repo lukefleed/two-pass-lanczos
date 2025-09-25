@@ -1,6 +1,4 @@
 /target
-faer.xml
-.github/instructions/faer.instructions.md
 data/1000
 data/2000
 data/3000
@@ -20,5 +18,3 @@ data/scalability
 *.run.xml
 *.synctex.gz
 *.toc
-.github/instructions/guidelines.instructions.md
-.github/instructions/rust.instructions.md
