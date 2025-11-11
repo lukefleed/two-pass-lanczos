@@ -1,16 +1,8 @@
-# Two-Pass Lanczos Implementation
+# A Cache Efficient, Low-Memory Lanczos Algorithm
 
-This document provides an overview of the Two-Pass Lanczos implementation, including compilation instructions, optimization strategies, dependencies, repository structure, data generation, correctness testing, and reproduction of experimental results.
+This repository contains a Rust implementation of a memory-efficient, two-pass variant of the Lanczos algorithm for computing the action of a matrix function on a vector, $f(\mathbf{A}) \mathbf{b}$. The two-pass Lanczos algorithm significantly reduces memory consumption compared to the standard Lanczos method by avoiding the storage of the entire Krylov basis during the iterations, at the cost of performing double the number of matrix-vector products.
 
-## Install Rust
-
-To compile and run the project, you need to have Rust installed on your system. You can install Rust using the official installer, [rustup](https://rustup.rs/). On a Unix-like system, you can run the following command in your terminal:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-**IMPORTANT NOTE:** In order to reproduce the experimental results, you need to be on a Linux system. The library itself works on any platform supported by Rust, but the experiments rely on performance measurements that only work on Linux. On non-Linux systems, the library will still compile and run, but the experiments will not produce meaningful results regarding memory usage. A warning will be printed if you attempt to run the experiments on a non-Linux system.
+The implementation is based on the library [faer](https://github.com/sarah-ek/faer-rs).
 
 ## Best way to have a look at the API
 
@@ -63,24 +55,6 @@ The release profile includes aggressive optimization settings:
 
 > Compile time may be longer due to LTO and single codegen unit settings, but the resulting binaries will be significantly faster. If you need faster compile times, just comment out the relevant lines in `Cargo.toml` or build without `--release`. Note that debug builds will be significantly slower for numerical workloads
 
-## Dependencies
-
-### Core Linear Algebra: Faer
-
-The implementation is built on the [faer](https://github.com/sarah-ek/faer-rs) library, a modern Rust linear algebra framework that provides:
-
-- High-performance BLAS/LAPACK operations
-- Memory-efficient sparse matrix representations
-- Stack-allocated temporary buffers for memory management
-- Matrix-free linear operators for large-scale computations
-
-Other dependencies include:
-- **Clap**: Command-line interface framework
-- **CSV**: Data export for experimental results
-- **Serde**: Serialization for structured data output
-- **Anyhow**: Error handling and context propagation
-- **Rand**: Deterministic random number generation for reproducible experiments
-
 ## Build Script (build.rs)
 
 The `build.rs` script automatically generates test suites by scanning the `data/` directory for test instances. It performs the following operations:
@@ -97,52 +71,6 @@ The generated tests are included at compile time via the `include!` macro in `te
 
 > The build.rs is automatically executed during the build process and does not require manual invocation.
 
-## Repository Structure
-
-```bash
-two-pass-lanczos/
-├── Cargo.toml                  # Project configuration and dependencies
-├── build.rs                    # Automated test generation
-├── src/
-│   ├── lib.rs                  # Core library exports
-│   ├── error.rs                # Error types and handling
-│   ├── solvers.rs              # Lanczos algorithm implementations
-│   ├── algorithms/             # Lanczos variants and utilities
-│   │   ├── mod.rs
-│   │   ├── lanczos.rs          # Standard one-pass Lanczos
-│   │   └── lanczos_two_pass.rs # Memory-efficient two-pass Lanczos
-│   ├── bin/                    # Experiment executables
-│   │   ├── datagen.rs          # Data generation orchestrator
-│   │   ├── scalability.rs      # Performance scaling analysis
-│   │   ├── stability.rs        # Numerical accuracy experiments
-│   │   ├── tradeoff.rs         # Memory-time tradeoff analysis
-│   │   ├── dense_tradeoff.rs   # Dense matrix tradeoff analysis
-│   │   └── orthogonality.rs    # Basis orthogonality analysis
-│   └── utils/                  # Utility modules
-│       ├── mod.rs
-│       ├── data_loader.rs      # KKT system file parsing
-│       └── perf.rs             # Performance measurement utilities
-├── tests/
-│   └── correctness.rs          # Mathematical correctness validation
-├── data/                       # Test instance datasets
-│   ├── 1000/                   # 1000-node network problems
-│   ├── 2000/                   # 2000-node network problems
-│   ├── 3000/                   # 3000-node network problems
-│   ├── netgen/                 # DIMACS network generator
-│   └── qcnd/                   # Quadratic cost generation tools
-├── python/                     # Visualization and analysis scripts
-│   ├── plot_scalability.py
-│   ├── plot_stability.py
-│   ├── plot_tradeoff.py
-│   ├── plot_dense_tradeoff.py
-│   └── plot_orthogonality.py
-├── results/                    # Experimental output data
-│   └── images/                 # Generated plots and figures
-└── tex/                        # LaTeX report documentation
-    ├── report.tex
-    ├── report.pdf
-    └── ref.bib
-```
 
 ## Data Generation
 
@@ -291,6 +219,7 @@ cargo run --release --bin datagen -- \
     --scaling ns \
     --output-dir data/arcs500k_rho3
 ```
+
 **Run Experiments**
 ```bash
 # Large-scale problem (500K arcs)
