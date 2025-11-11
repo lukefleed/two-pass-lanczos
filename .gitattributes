@@ -1,0 +1,4 @@
+*.tex linguist-documentation=false
+*.py linguist-language=Python
+*.C linguist-language=C
+*Makefile* linguist-language=Makefile
