@@ -1,6 +1,13 @@
-# A Cache Efficient, Low-Memory Lanczos Algorithm
+[![Featured on Hacker News](https://hackerbadge.now.sh/api?id=45889891)](https://news.ycombinator.com/item?id=45889891)
+
+# A Cache-Efficient, Low-Memory Lanczos Algorithm
 
 This repository contains a Rust implementation of a memory-efficient, two-pass variant of the Lanczos algorithm for computing the action of a matrix function on a vector, $f(\mathbf{A}) \mathbf{b}$. The two-pass Lanczos algorithm significantly reduces memory consumption compared to the standard Lanczos method by avoiding the storage of the entire Krylov basis during the iterations, at the cost of performing double the number of matrix-vector products.
+
+You can read about it in:
+
+* [Report](https://github.com/lukefleed/two-pass-lanczos/raw/master/tex/report.pdf): a more detailed report with references and experimental results.
+* [Blog](https://lukefleed.xyz/posts/cache-friendly-low-memory-lanczos): a blog post on my website with more details about implementation choices.
 
 The implementation is based on the library [faer](https://github.com/sarah-ek/faer-rs).
 
