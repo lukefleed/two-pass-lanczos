@@ -18,3 +18,4 @@ data/scalability
 *.run.xml
 *.synctex.gz
 *.toc
+.worktrees/
