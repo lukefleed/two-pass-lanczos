@@ -379,6 +379,56 @@ mod tests {
         (a, b)
     }
 
+    // --- EDGE CASE TESTS ---
+
+    #[test]
+    #[ignore = "k=0 panics on underflow — fixed in Task 4"]
+    fn test_k_zero_returns_empty_decomposition() -> Result<()> {
+        let a: Mat<f64> = Mat::identity(4, 4);
+        let b: Mat<f64> = mat![[1.0], [2.0], [3.0], [4.0]];
+        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
+        let stack = MemStack::new(&mut mem);
+
+        let result = lanczos_standard(&a, b.as_ref(), 0, stack, None)?;
+        assert_eq!(result.decomposition.steps_taken, 0);
+        assert!(result.decomposition.alphas.is_empty());
+        assert!(result.decomposition.betas.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "k=0 panics on underflow — fixed in Task 4"]
+    fn test_k_zero_two_pass_returns_empty() -> Result<()> {
+        let a: Mat<f64> = Mat::identity(4, 4);
+        let b: Mat<f64> = mat![[1.0], [2.0], [3.0], [4.0]];
+        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
+        let stack = MemStack::new(&mut mem);
+
+        let result = lanczos_pass_one(&a, b.as_ref(), 0, stack)?;
+        assert_eq!(result.steps_taken, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_k_one_produces_single_step() -> Result<()> {
+        let a: Mat<f64> = mat![
+            [2.0, -1.0, 0.0, 0.0],
+            [-1.0, 2.0, -1.0, 0.0],
+            [0.0, -1.0, 2.0, -1.0],
+            [0.0, 0.0, -1.0, 2.0],
+        ];
+        let b: Mat<f64> = mat![[1.0], [0.0], [0.0], [0.0]];
+        let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
+        let stack = MemStack::new(&mut mem);
+
+        let result = lanczos_standard(&a.as_ref(), b.as_ref(), 1, stack, None)?;
+        assert_eq!(result.decomposition.steps_taken, 1);
+        assert_eq!(result.decomposition.alphas.len(), 1);
+        assert!(result.decomposition.betas.is_empty());
+        assert_eq!(result.v_k.ncols(), 1);
+        Ok(())
+    }
+
     // --- UNIT TESTS ---
 
     #[test]

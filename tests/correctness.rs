@@ -324,6 +324,39 @@ generate_correctness_test!(
     "Two-pass matrix square"
 );
 
+// --- Solution Equivalence Test ---
+// Verifies that the one-pass and two-pass algorithms produce identical solution vectors,
+// confirming that the memory-efficient two-pass variant is mathematically equivalent.
+
+#[test]
+fn test_one_pass_two_pass_solution_equivalence() -> Result<()> {
+    let n = 100;
+    let k = 30;
+    let (a, b, _eigs) = create_diagonal_problem(n);
+
+    let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
+        let t_k = assemble_tridiagonal(alphas, betas);
+        if t_k.nrows() == 0 {
+            return Ok(Mat::zeros(0, 1));
+        }
+        let mut e1 = Mat::zeros(t_k.nrows(), 1);
+        e1.as_mut()[(0, 0)] = 1.0;
+        Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
+    };
+
+    let mut mem1 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let mut stack1 = MemStack::new(&mut mem1);
+    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, &mut stack1, &f_tk_solver)?;
+
+    let mut mem2 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let mut stack2 = MemStack::new(&mut mem2);
+    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, &mut stack2, f_tk_solver)?;
+
+    let diff = (&x1 - &x2).norm_l2();
+    ensure!(diff < 1e-12, "One-pass vs two-pass differ by {}", diff);
+    Ok(())
+}
+
 // --- Regression Test ---
 // This test locks down the exact Lanczos tridiagonal coefficients for a fixed problem,
 // ensuring that any refactoring that alters floating-point summation order is detected.
