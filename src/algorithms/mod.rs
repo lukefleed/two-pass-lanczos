@@ -382,7 +382,6 @@ mod tests {
     // --- EDGE CASE TESTS ---
 
     #[test]
-    #[ignore = "k=0 panics on underflow — fixed in Task 4"]
     fn test_k_zero_returns_empty_decomposition() -> Result<()> {
         let a: Mat<f64> = Mat::identity(4, 4);
         let b: Mat<f64> = mat![[1.0], [2.0], [3.0], [4.0]];
@@ -397,7 +396,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "k=0 panics on underflow — fixed in Task 4"]
     fn test_k_zero_two_pass_returns_empty() -> Result<()> {
         let a: Mat<f64> = Mat::identity(4, 4);
         let b: Mat<f64> = mat![[1.0], [2.0], [3.0], [4.0]];

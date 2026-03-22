@@ -72,8 +72,18 @@ where
     T::Real: RealField,
 {
     let b_norm = b.norm_l2();
+
+    if k == 0 {
+        return Ok(LanczosDecomposition {
+            alphas: Vec::new(),
+            betas: Vec::new(),
+            steps_taken: 0,
+            b_norm,
+        });
+    }
+
     let mut alphas = Vec::with_capacity(k);
-    let mut betas = Vec::with_capacity(k - 1);
+    let mut betas = Vec::with_capacity(k.saturating_sub(1));
 
     // The stateful Lanczos iterator handles the vector recurrence. In this pass,
     // we only care about the scalar results of each step.

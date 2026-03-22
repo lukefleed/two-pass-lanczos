@@ -64,6 +64,18 @@ where
 {
     let b_norm = b.norm_l2();
 
+    if k == 0 {
+        return Ok(LanczosOutput {
+            v_k: Mat::zeros(operator.nrows(), 0),
+            decomposition: LanczosDecomposition {
+                alphas: Vec::new(),
+                betas: Vec::new(),
+                steps_taken: 0,
+                b_norm,
+            },
+        });
+    }
+
     // Pre-allocate the basis matrix V_k. This is a key aspect of the one-pass
     // approach. While it reserves a potentially large contiguous block of memory,
     // it avoids incremental resizing, which would be highly inefficient.
@@ -72,7 +84,7 @@ where
     // Pre-allocate vectors for the scalar coefficients with a capacity hint to
     // prevent reallocations during the main loop.
     let mut alphas = Vec::with_capacity(k);
-    let mut betas = Vec::with_capacity(k - 1);
+    let mut betas = Vec::with_capacity(k.saturating_sub(1));
 
     // Initialize the stateful Lanczos iterator.
     let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm))?;
