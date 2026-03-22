@@ -7,6 +7,7 @@
 
 use crate::{
     algorithms::{
+        Reorthogonalization,
         lanczos::lanczos_standard,
         lanczos_two_pass::{lanczos_pass_one, lanczos_pass_two},
     },
@@ -18,7 +19,7 @@ use faer::{
     linalg::matmul::matmul,
     matrix_free::LinOp,
     prelude::*,
-    traits::{ComplexField, RealField},
+    traits::{ComplexField, RealField, math_utils::mul},
 };
 
 /// Computes an approximation to $f(\mathbf{A})\mathbf{b}$ using the standard one-pass Lanczos method.
@@ -36,6 +37,8 @@ use faer::{
 /// * `operator`: A linear operator $\mathbf{A}$.
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The number of Lanczos iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
+/// * `reorthog`: The [`Reorthogonalization`] strategy for the Lanczos basis.
 /// * `stack`: A `MemStack` for temporary allocations.
 /// * `f_tk_solver`: A closure that takes the coefficients $(\alpha_j, \beta_j)$ defining the
 ///   tridiagonal matrix $\mathbf{T}_k$ and returns the vector $f(\mathbf{T}_k) \mathbf{e}_1$.
@@ -47,6 +50,8 @@ pub fn lanczos<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
+    reorthog: Reorthogonalization,
     stack: &mut MemStack,
     mut f_tk_solver: F,
 ) -> Result<Mat<T>, LanczosError>
@@ -58,7 +63,7 @@ where
 {
     // 1. Perform the standard one-pass Lanczos iteration. This is memory-intensive
     // as it materializes the full basis matrix `v_k` in memory.
-    let standard_output = lanczos_standard(operator, b, k, stack, None)?;
+    let standard_output = lanczos_standard(operator, b, k, par, reorthog, stack, None)?;
 
     // Handle the case where the iteration terminates immediately (e.g., zero input vector).
     if standard_output.decomposition.steps_taken == 0 {
@@ -100,7 +105,7 @@ where
         y_k_prime.as_ref(),
         // The final scaling factor.
         T::from_real_impl(&standard_output.decomposition.b_norm),
-        Par::Seq,
+        par,
     );
 
     Ok(x_k)
@@ -123,6 +128,7 @@ where
 /// * `operator`: A linear operator $\mathbf{A}$.
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The number of Lanczos iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
 /// * `stack`: A `MemStack` for temporary allocations.
 /// * `f_tk_solver`: A closure that takes the coefficients $(\alpha_j, \beta_j)$ defining the
 ///   tridiagonal matrix $\mathbf{T}_k$ and returns the vector $f(\mathbf{T}_k) \mathbf{e}_1$.
@@ -134,6 +140,7 @@ pub fn lanczos_two_pass<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
     stack: &mut MemStack,
     mut f_tk_solver: F,
 ) -> Result<Mat<T>, LanczosError>
@@ -145,14 +152,14 @@ where
 {
     // 1. Perform the first pass, which is memory-light. It computes the scalar
     // decomposition and uses only a constant number of n-dimensional vectors.
-    let decomposition = lanczos_pass_one(operator, b, k, stack)?;
+    let decomposition = lanczos_pass_one(operator, b, k, par, stack)?;
 
     if decomposition.steps_taken == 0 {
         return Ok(Mat::zeros(b.nrows(), 1));
     }
 
     // 2. Solve the projected problem, identical to the one-pass method.
-    let y_k_prime = f_tk_solver(&decomposition.alphas, &decomposition.betas)
+    let mut y_k_prime = f_tk_solver(&decomposition.alphas, &decomposition.betas)
         .map_err(|e| LanczosError::from(LanczosErrorKind::SolverError(e.to_string())))?;
 
     if y_k_prime.nrows() != decomposition.steps_taken || y_k_prime.ncols() != 1 {
@@ -164,12 +171,14 @@ where
         .into());
     }
 
-    // 3. Scale the result by the norm of the initial vector `b` to get the final
-    // coefficient vector for reconstruction.
-    let y_k = &y_k_prime * Scale(T::from_real_impl(&decomposition.b_norm));
+    // 3. Scale the coefficient vector in-place by ||b|| to avoid an intermediate allocation.
+    let b_norm_scaled = T::from_real_impl(&decomposition.b_norm);
+    zip!(y_k_prime.as_mut()).for_each(|unzip!(y_i)| {
+        *y_i = mul(y_i, &b_norm_scaled);
+    });
 
     // 4. Perform the second pass. This reconstructs the solution vector on-the-fly
     // by regenerating the basis vectors one at a time and accumulating the result,
     // thereby avoiding the storage of the full basis matrix.
-    lanczos_pass_two(operator, b, &decomposition, y_k.as_ref(), stack)
+    lanczos_pass_two(operator, b, &decomposition, y_k_prime.as_ref(), par, stack)
 }

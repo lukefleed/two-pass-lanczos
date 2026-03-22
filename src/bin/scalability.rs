@@ -9,12 +9,14 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use faer::{
+    Par,
     dyn_stack::{MemBuffer, MemStack},
     matrix_free::LinOp,
     prelude::*,
     sparse::{SparseColMat, Triplet},
 };
 use lanczos_project::{
+    Reorthogonalization,
     solvers::{lanczos, lanczos_two_pass},
     utils::{data_loader::load_kkt_system, perf::get_peak_rss_kb},
 };
@@ -391,6 +393,8 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
                 a,
                 b.as_ref(),
                 args.k_fixed,
+                Par::Seq,
+                Reorthogonalization::None,
                 MemStack::new(&mut stack_mem),
                 &f_tk_solver,
             )?;
@@ -402,6 +406,7 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
                 a,
                 b.as_ref(),
                 args.k_fixed,
+                Par::Seq,
                 MemStack::new(&mut stack_mem),
                 &f_tk_solver,
             )?;

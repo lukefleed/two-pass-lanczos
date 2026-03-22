@@ -16,6 +16,7 @@ use faer::{
     sparse::{SparseColMat, SymbolicSparseColMat, Triplet},
 };
 use lanczos_project::{
+    Reorthogonalization,
     solvers::{lanczos, lanczos_two_pass},
     utils::perf::get_peak_rss_kb,
 };
@@ -188,6 +189,8 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    faer::Par::Seq,
+                    Reorthogonalization::None,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;
@@ -199,6 +202,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    faer::Par::Seq,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;

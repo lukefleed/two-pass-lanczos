@@ -34,7 +34,7 @@
 //!
 //! ```rust
 //! use faer::{Mat, dyn_stack::{MemBuffer, MemStack}};
-//! use lanczos_project::{lanczos, lanczos_two_pass};
+//! use lanczos_project::{lanczos, lanczos_two_pass, Reorthogonalization};
 //! use faer::matrix_free::LinOp;
 //! use faer::prelude::Solve;
 //!
@@ -74,10 +74,10 @@
 //!
 //! let num_steps = 3;
 //! // Standard one-pass method
-//! let x1 = lanczos(&a.as_ref(), b.as_ref(), num_steps, &mut stack, &linear_solver).unwrap();
+//! let x1 = lanczos(&a.as_ref(), b.as_ref(), num_steps, faer::Par::Seq, Reorthogonalization::None, &mut stack, &linear_solver).unwrap();
 //!
 //! // Two-pass method (same result, less memory)
-//! let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), num_steps, &mut stack, linear_solver).unwrap();
+//! let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), num_steps, faer::Par::Seq, &mut stack, linear_solver).unwrap();
 //!
 //! // Results should be nearly identical
 //! assert!((x1.as_ref() - x2.as_ref()).norm_l2() < 1e-12);
@@ -98,4 +98,5 @@ pub mod utils;
 
 // Re-export the main API from solvers for convenient access.
 // These are the primary functions that users should use.
+pub use algorithms::{Reorthogonalization, lanczos_scratch};
 pub use solvers::{lanczos, lanczos_two_pass};

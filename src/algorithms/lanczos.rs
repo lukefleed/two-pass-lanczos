@@ -22,13 +22,15 @@
 
 use super::{
     LanczosCallback, LanczosDecomposition, LanczosError, LanczosIteration, LanczosOutput,
-    TridiagonalSystemView, breakdown_tolerance,
+    Reorthogonalization, TridiagonalSystemView, breakdown_tolerance,
 };
 use faer::{
+    Conj, Par,
     dyn_stack::MemStack,
+    linalg::matmul::dot::inner_prod,
     matrix_free::LinOp,
     prelude::*,
-    traits::{ComplexField, RealField},
+    traits::{ComplexField, RealField, math_utils::{mul, sub}},
 };
 
 /// Performs the standard one-pass symmetric Lanczos algorithm.
@@ -45,6 +47,8 @@ use faer::{
 /// * `operator`: A linear operator implementing [`faer::matrix_free::LinOp`].
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The maximum number of iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
+/// * `reorthog`: The [`Reorthogonalization`] strategy to use.
 /// * `stack`: A [`MemStack`] for temporary allocations.
 /// * `callback`: An optional mutable reference to a callback function invoked at each iteration.
 ///
@@ -56,6 +60,8 @@ pub fn lanczos_standard<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
+    reorthog: Reorthogonalization,
     stack: &mut MemStack,
     mut callback: Option<&mut LanczosCallback<T>>,
 ) -> Result<LanczosOutput<T>, LanczosError>
@@ -63,6 +69,18 @@ where
     T::Real: RealField,
 {
     let b_norm = b.norm_l2();
+
+    if k == 0 {
+        return Ok(LanczosOutput {
+            v_k: Mat::zeros(operator.nrows(), 0),
+            decomposition: LanczosDecomposition {
+                alphas: Vec::new(),
+                betas: Vec::new(),
+                steps_taken: 0,
+                b_norm,
+            },
+        });
+    }
 
     // Pre-allocate the basis matrix V_k. This is a key aspect of the one-pass
     // approach. While it reserves a potentially large contiguous block of memory,
@@ -72,16 +90,17 @@ where
     // Pre-allocate vectors for the scalar coefficients with a capacity hint to
     // prevent reallocations during the main loop.
     let mut alphas = Vec::with_capacity(k);
-    let mut betas = Vec::with_capacity(k - 1);
+    let mut betas = Vec::with_capacity(k.saturating_sub(1));
 
     // Initialize the stateful Lanczos iterator.
-    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm))?;
+    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm), par)?;
 
     // The first Lanczos vector is the normalized input vector `b`.
     v_k.col_mut(0)
         .copy_from(lanczos_iter.v_curr.as_ref().col(0));
 
     let mut steps_taken = 0;
+    let tolerance = breakdown_tolerance::<T::Real>();
 
     for i in 0..k {
         if let Some(step) = lanczos_iter.next_step(stack) {
@@ -107,7 +126,6 @@ where
 
             // A zero (or numerically zero) beta indicates that breakdown has occurred.
             // The Krylov subspace is invariant, and the iteration must terminate.
-            let tolerance = breakdown_tolerance::<T::Real>();
             if step.beta <= tolerance {
                 break;
             }
@@ -120,6 +138,56 @@ where
                 // now holds the next orthonormal vector, v_{i+1}.
                 v_k.col_mut(i + 1)
                     .copy_from(lanczos_iter.v_curr.as_ref().col(0));
+
+                if reorthog == Reorthogonalization::Full {
+                    // DGKS refinement: two iterations of classical Gram-Schmidt to
+                    // restore machine-precision orthogonality at O(k^2 * n) cost.
+                    // We copy column out to avoid simultaneous mutable+immutable
+                    // borrows of v_k.
+                    let mut v_new = v_k.as_ref().col(i + 1).as_mat().to_owned();
+
+                    for _ in 0..2 {
+                        for col_idx in 0..=i {
+                            let v_col = v_k.as_ref().col(col_idx);
+                            let h = inner_prod(
+                                v_col.transpose(),
+                                Conj::No,
+                                v_new.as_ref().col(0),
+                                Conj::No,
+                            );
+                            zip!(v_new.as_mut(), v_col.as_mat()).for_each(
+                                |unzip!(vi, ui)| {
+                                    *vi = sub(vi, &mul(&h, ui));
+                                },
+                            );
+                        }
+                    }
+
+                    // Renormalize and update beta to match the reorthogonalized
+                    // vector.
+                    let new_norm = v_new.as_ref().norm_l2();
+                    if new_norm > breakdown_tolerance::<T::Real>() {
+                        let inv =
+                            T::from_real_impl(&T::Real::recip_impl(&new_norm));
+                        zip!(v_new.as_mut()).for_each(|unzip!(vi)| {
+                            *vi = mul(vi, &inv);
+                        });
+                    }
+
+                    // Write back to basis matrix and sync iterator state.
+                    v_k.col_mut(i + 1)
+                        .copy_from(v_new.as_ref().col(0));
+                    lanczos_iter
+                        .v_curr
+                        .col_mut(0)
+                        .copy_from(v_new.as_ref().col(0));
+
+                    // Update stored beta to reflect post-reorthog norm so that
+                    // the tridiagonal relation remains consistent.
+                    if let Some(last_beta) = betas.last_mut() {
+                        *last_beta = new_norm;
+                    }
+                }
             }
         } else {
             // This branch is taken if the iterator terminates because k >= max_k.

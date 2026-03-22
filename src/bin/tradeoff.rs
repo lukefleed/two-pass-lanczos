@@ -9,6 +9,7 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use faer::{
+    Par,
     dyn_stack::{MemBuffer, MemStack},
     matrix_free::LinOp,
     prelude::*,
@@ -16,6 +17,7 @@ use faer::{
 };
 use lanczos_project::utils::perf::get_peak_rss_kb;
 use lanczos_project::{
+    Reorthogonalization,
     solvers::{lanczos, lanczos_two_pass},
     utils::data_loader::load_kkt_system,
 };
@@ -269,6 +271,8 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    Par::Seq,
+                    Reorthogonalization::None,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;
@@ -280,6 +284,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    Par::Seq,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;

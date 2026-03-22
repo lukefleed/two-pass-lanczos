@@ -30,7 +30,7 @@ use faer::{
     prelude::*,
     sparse::{SparseColMat, Triplet},
 };
-use lanczos_project::solvers::{lanczos, lanczos_two_pass};
+use lanczos_project::{Reorthogonalization, solvers::{lanczos, lanczos_two_pass}};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 /// A tolerance for the relative error against the ground truth for non-polynomial functions.
@@ -139,7 +139,7 @@ macro_rules! generate_correctness_test {
             let mut stack = MemStack::new(&mut mem);
 
             // Run the specified Lanczos solver to get the approximate solution x_k.
-            let x_k = $solver_logic(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+            let x_k = $solver_logic(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack)?;
 
             // Compute the relative error, a standard metric for vector approximation accuracy.
             let rel_err = (&x_k - &x_true).norm_l2() / x_true.norm_l2();
@@ -164,7 +164,7 @@ macro_rules! generate_correctness_test {
 // This is the most fundamental application of Krylov subspace methods.
 generate_correctness_test!(
     test_linear_solve_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = T_k^{-1} * e_1.
         // We use a general-purpose LU decomposition with partial pivoting, which is a
         // numerically stable method for solving dense linear systems.
@@ -177,7 +177,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| 1.0 / z,
     APPROX_TOLERANCE,
@@ -186,7 +186,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_linear_solve_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             if t_k.nrows() == 0 {
@@ -196,7 +196,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| 1.0 / z,
     APPROX_TOLERANCE,
@@ -207,7 +207,7 @@ generate_correctness_test!(
 // This validates the algorithm for a transcendental function, common in the solution of ODEs.
 generate_correctness_test!(
     test_matrix_exp_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = exp(T_k) * e_1.
         // Since T_k is symmetric, exp(T_k) can be stably computed via its spectral
         // decomposition: exp(T_k) = Q * exp(D) * Q^T.
@@ -224,22 +224,15 @@ generate_correctness_test!(
                 .map_err(|e| anyhow!("EVD failed: {:?}", e))?;
             let q_tk = evd.U();
             let d_lambda = evd.S();
-            // 2. Compute exp(D) by applying exp() to the eigenvalues.
-            let f_d = Mat::from_fn(
-                steps,
-                steps,
-                |i, j| {
-                    if i == j { d_lambda[i].exp() } else { 0.0 }
-                },
-            );
-            // 3. Reconstruct exp(T_k) = Q * exp(D) * Q^T.
-            let f_t_k = q_tk * &f_d * q_tk.adjoint();
+            // 2. Compute exp(T_k) * e_1 via column-wise scaling:
+            //    Q * diag(exp(λ)) * Q^T * e_1, avoiding the k×k dense allocation.
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
-            // 4. Compute the final result vector.
-            Ok(&f_t_k * &e1)
+            let qt_e1 = q_tk.adjoint() * &e1;
+            let scaled = Mat::from_fn(steps, 1, |i, _| qt_e1[(i, 0)] * d_lambda[i].exp());
+            Ok(q_tk * &scaled)
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| z.exp(),
     APPROX_TOLERANCE,
@@ -248,7 +241,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_matrix_exp_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             let steps = t_k.nrows();
@@ -261,19 +254,13 @@ generate_correctness_test!(
                 .map_err(|e| anyhow!("EVD failed: {:?}", e))?;
             let q_tk = evd.U();
             let d_lambda = evd.S();
-            let f_d = Mat::from_fn(
-                steps,
-                steps,
-                |i, j| {
-                    if i == j { d_lambda[i].exp() } else { 0.0 }
-                },
-            );
-            let f_t_k = q_tk * &f_d * q_tk.adjoint();
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
-            Ok(&f_t_k * &e1)
+            let qt_e1 = q_tk.adjoint() * &e1;
+            let scaled = Mat::from_fn(steps, 1, |i, _| qt_e1[(i, 0)] * d_lambda[i].exp());
+            Ok(q_tk * &scaled)
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.exp(),
     APPROX_TOLERANCE,
@@ -284,7 +271,7 @@ generate_correctness_test!(
 // This validates the algorithm for a polynomial, for which the result should be nearly exact.
 generate_correctness_test!(
     test_matrix_square_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = T_k^2 * e_1.
         // This can be computed directly by matrix multiplication.
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
@@ -297,7 +284,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| z.powi(2),
     EXACT_TOLERANCE,
@@ -306,7 +293,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_matrix_square_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             if t_k.nrows() == 0 {
@@ -317,9 +304,123 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.powi(2),
     EXACT_TOLERANCE,
     "Two-pass matrix square"
 );
+
+// --- Solution Equivalence Test ---
+// Verifies that the one-pass and two-pass algorithms produce identical solution vectors,
+// confirming that the memory-efficient two-pass variant is mathematically equivalent.
+
+#[test]
+fn test_one_pass_two_pass_solution_equivalence() -> Result<()> {
+    let n = 100;
+    let k = 30;
+    let (a, b, _eigs) = create_diagonal_problem(n);
+
+    let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
+        let t_k = assemble_tridiagonal(alphas, betas);
+        if t_k.nrows() == 0 {
+            return Ok(Mat::zeros(0, 1));
+        }
+        let mut e1 = Mat::zeros(t_k.nrows(), 1);
+        e1.as_mut()[(0, 0)] = 1.0;
+        Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
+    };
+
+    let mut mem1 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let stack1 = MemStack::new(&mut mem1);
+    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, Reorthogonalization::None, stack1, &f_tk_solver)?;
+
+    let mut mem2 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let stack2 = MemStack::new(&mut mem2);
+    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, Par::Seq, stack2, f_tk_solver)?;
+
+    let diff = (&x1 - &x2).norm_l2();
+    ensure!(diff < 1e-12, "One-pass vs two-pass differ by {}", diff);
+    Ok(())
+}
+
+// --- Regression Test ---
+// This test locks down the exact Lanczos tridiagonal coefficients for a fixed problem,
+// ensuring that any refactoring that alters floating-point summation order is detected.
+
+#[test]
+fn test_golden_value_lanczos_coefficients() -> Result<()> {
+    use lanczos_project::algorithms::lanczos::lanczos_standard;
+
+    let n = 100;
+    let k = 10;
+    let (a, b, _eigs) = create_diagonal_problem(n);
+    let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let stack = MemStack::new(&mut mem);
+
+    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, lanczos_project::Reorthogonalization::None, stack, None)?;
+
+    ensure!(
+        output.decomposition.steps_taken == k,
+        "Expected {} steps, got {}",
+        k,
+        output.decomposition.steps_taken
+    );
+
+    // Golden values captured from a known-good run. Updated after fusing the
+    // beta-subtraction and dot-product passes (4 sweeps -> 3), which changed
+    // the FP accumulation order for alpha/beta values at ULP level.
+    #[expect(clippy::excessive_precision)]
+    let golden_alphas: [f64; 5] = [
+        52.97782051430146311,
+        51.63983040769662125,
+        47.56379230698905758,
+        52.26404007970732124,
+        49.98428350718381097,
+    ];
+    #[expect(clippy::excessive_precision)]
+    let golden_betas: [f64; 5] = [
+        28.97606231351560879,
+        26.11302677401963379,
+        24.96008410770487984,
+        24.57230990302882390,
+        25.27009528124148119,
+    ];
+
+    let tol = 1e-13;
+    for (i, (&actual, &expected)) in output
+        .decomposition
+        .alphas
+        .iter()
+        .zip(golden_alphas.iter())
+        .enumerate()
+    {
+        ensure!(
+            (actual - expected).abs() < tol,
+            "Alpha mismatch at index {}: got {}, expected {} (diff = {})",
+            i,
+            actual,
+            expected,
+            (actual - expected).abs()
+        );
+    }
+
+    for (i, (&actual, &expected)) in output
+        .decomposition
+        .betas
+        .iter()
+        .zip(golden_betas.iter())
+        .enumerate()
+    {
+        ensure!(
+            (actual - expected).abs() < tol,
+            "Beta mismatch at index {}: got {}, expected {} (diff = {})",
+            i,
+            actual,
+            expected,
+            (actual - expected).abs()
+        );
+    }
+
+    Ok(())
+}
