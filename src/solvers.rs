@@ -18,7 +18,7 @@ use faer::{
     linalg::matmul::matmul,
     matrix_free::LinOp,
     prelude::*,
-    traits::{ComplexField, RealField},
+    traits::{ComplexField, RealField, math_utils::mul},
 };
 
 /// Computes an approximation to $f(\mathbf{A})\mathbf{b}$ using the standard one-pass Lanczos method.
@@ -152,7 +152,7 @@ where
     }
 
     // 2. Solve the projected problem, identical to the one-pass method.
-    let y_k_prime = f_tk_solver(&decomposition.alphas, &decomposition.betas)
+    let mut y_k_prime = f_tk_solver(&decomposition.alphas, &decomposition.betas)
         .map_err(|e| LanczosError::from(LanczosErrorKind::SolverError(e.to_string())))?;
 
     if y_k_prime.nrows() != decomposition.steps_taken || y_k_prime.ncols() != 1 {
@@ -164,12 +164,14 @@ where
         .into());
     }
 
-    // 3. Scale the result by the norm of the initial vector `b` to get the final
-    // coefficient vector for reconstruction.
-    let y_k = &y_k_prime * Scale(T::from_real_impl(&decomposition.b_norm));
+    // 3. Scale the coefficient vector in-place by ||b|| to avoid an intermediate allocation.
+    let b_norm_scaled = T::from_real_impl(&decomposition.b_norm);
+    zip!(y_k_prime.as_mut()).for_each(|unzip!(y_i)| {
+        *y_i = mul(y_i, &b_norm_scaled);
+    });
 
     // 4. Perform the second pass. This reconstructs the solution vector on-the-fly
     // by regenerating the basis vectors one at a time and accumulating the result,
     // thereby avoiding the storage of the full basis matrix.
-    lanczos_pass_two(operator, b, &decomposition, y_k.as_ref(), stack)
+    lanczos_pass_two(operator, b, &decomposition, y_k_prime.as_ref(), stack)
 }
