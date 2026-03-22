@@ -17,6 +17,7 @@ use faer::{
 };
 use lanczos_project::utils::perf::get_peak_rss_kb;
 use lanczos_project::{
+    Reorthogonalization,
     solvers::{lanczos, lanczos_two_pass},
     utils::data_loader::load_kkt_system,
 };
@@ -271,6 +272,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     b.as_ref(),
                     k,
                     Par::Seq,
+                    Reorthogonalization::None,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;

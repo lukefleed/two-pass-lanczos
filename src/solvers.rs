@@ -7,6 +7,7 @@
 
 use crate::{
     algorithms::{
+        Reorthogonalization,
         lanczos::lanczos_standard,
         lanczos_two_pass::{lanczos_pass_one, lanczos_pass_two},
     },
@@ -37,6 +38,7 @@ use faer::{
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The number of Lanczos iterations to perform.
 /// * `par`: The parallelism strategy for operator application.
+/// * `reorthog`: The [`Reorthogonalization`] strategy for the Lanczos basis.
 /// * `stack`: A `MemStack` for temporary allocations.
 /// * `f_tk_solver`: A closure that takes the coefficients $(\alpha_j, \beta_j)$ defining the
 ///   tridiagonal matrix $\mathbf{T}_k$ and returns the vector $f(\mathbf{T}_k) \mathbf{e}_1$.
@@ -49,6 +51,7 @@ pub fn lanczos<T, O, F>(
     b: MatRef<'_, T>,
     k: usize,
     par: Par,
+    reorthog: Reorthogonalization,
     stack: &mut MemStack,
     mut f_tk_solver: F,
 ) -> Result<Mat<T>, LanczosError>
@@ -60,7 +63,7 @@ where
 {
     // 1. Perform the standard one-pass Lanczos iteration. This is memory-intensive
     // as it materializes the full basis matrix `v_k` in memory.
-    let standard_output = lanczos_standard(operator, b, k, par, stack, None)?;
+    let standard_output = lanczos_standard(operator, b, k, par, reorthog, stack, None)?;
 
     // Handle the case where the iteration terminates immediately (e.g., zero input vector).
     if standard_output.decomposition.steps_taken == 0 {

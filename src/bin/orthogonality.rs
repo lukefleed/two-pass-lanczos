@@ -12,6 +12,7 @@ use faer::{
     sparse::{SparseColMat, Triplet},
 };
 use lanczos_project::algorithms::{
+    Reorthogonalization,
     lanczos::lanczos_standard, lanczos_two_pass::lanczos_pass_two_with_basis,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -177,7 +178,7 @@ fn main() -> Result<()> {
 
         // --- 3. Generate Bases ---
         // a. Execute the standard one-pass algorithm to get the reference basis V_k.
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, Reorthogonalization::None, stack, None)?;
         let v_k_standard = standard_output.v_k;
         let steps = standard_output.decomposition.steps_taken;
         if steps == 0 {

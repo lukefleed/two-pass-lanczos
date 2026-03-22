@@ -14,7 +14,7 @@ use faer::{
     prelude::*,
     sparse::{SparseColMat, SymbolicSparseColMat, Triplet},
 };
-use lanczos_project::solvers::{lanczos, lanczos_two_pass};
+use lanczos_project::{Reorthogonalization, solvers::{lanczos, lanczos_two_pass}};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -283,7 +283,7 @@ fn main() -> Result<()> {
         // from one iteration do not interfere with the next
         let stack = MemStack::new(&mut stack_mem);
 
-        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, stack, &*f_tk_solver) {
+        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, Reorthogonalization::None, stack, &*f_tk_solver) {
             Ok(x) => x,
             Err(_) => {
                 log::warn!("Standard Lanczos failed at k={}. Stopping.", k);

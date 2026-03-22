@@ -30,7 +30,7 @@ use faer::{
     prelude::*,
     sparse::{SparseColMat, Triplet},
 };
-use lanczos_project::solvers::{lanczos, lanczos_two_pass};
+use lanczos_project::{Reorthogonalization, solvers::{lanczos, lanczos_two_pass}};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 /// A tolerance for the relative error against the ground truth for non-polynomial functions.
@@ -177,7 +177,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
-        lanczos(a, b, k, par, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| 1.0 / z,
     APPROX_TOLERANCE,
@@ -239,7 +239,7 @@ generate_correctness_test!(
             // 4. Compute the final result vector.
             Ok(&f_t_k * &e1)
         };
-        lanczos(a, b, k, par, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| z.exp(),
     APPROX_TOLERANCE,
@@ -297,7 +297,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos(a, b, k, par, stack, f_tk_solver)
+        lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
     |z: f64| z.powi(2),
     EXACT_TOLERANCE,
@@ -346,7 +346,7 @@ fn test_one_pass_two_pass_solution_equivalence() -> Result<()> {
 
     let mut mem1 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack1 = MemStack::new(&mut mem1);
-    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack1, &f_tk_solver)?;
+    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, Reorthogonalization::None, &mut stack1, &f_tk_solver)?;
 
     let mut mem2 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack2 = MemStack::new(&mut mem2);
@@ -371,7 +371,7 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
     let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack = MemStack::new(&mut mem);
 
-    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack, None)?;
+    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, lanczos_project::Reorthogonalization::None, &mut stack, None)?;
 
     ensure!(
         output.decomposition.steps_taken == k,
