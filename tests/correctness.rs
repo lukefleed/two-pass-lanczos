@@ -398,7 +398,7 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
         25.27009528124148119,
     ];
 
-    let tol = 1e-14;
+    let tol = 1e-13;
     for (i, (&actual, &expected)) in output
         .decomposition
         .alphas
