@@ -186,6 +186,7 @@ where
 /// both more efficient and numerically faithful to the sequence of operations in the first pass.
 ///
 /// The recurrence applied is: $\mathbf{w} = \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1}\mathbf{v}_{j-1}$.
+#[expect(clippy::too_many_arguments)]
 fn lanczos_reconstruction_step<T: ComplexField, O: LinOp<T>>(
     operator: &O,
     mut w: MatMut<'_, T>,

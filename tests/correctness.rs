@@ -332,12 +332,12 @@ fn test_one_pass_two_pass_solution_equivalence() -> Result<()> {
     };
 
     let mut mem1 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-    let mut stack1 = MemStack::new(&mut mem1);
-    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, Reorthogonalization::None, &mut stack1, &f_tk_solver)?;
+    let stack1 = MemStack::new(&mut mem1);
+    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, Reorthogonalization::None, stack1, &f_tk_solver)?;
 
     let mut mem2 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-    let mut stack2 = MemStack::new(&mut mem2);
-    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack2, f_tk_solver)?;
+    let stack2 = MemStack::new(&mut mem2);
+    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, Par::Seq, stack2, f_tk_solver)?;
 
     let diff = (&x1 - &x2).norm_l2();
     ensure!(diff < 1e-12, "One-pass vs two-pass differ by {}", diff);
@@ -356,9 +356,9 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
     let k = 10;
     let (a, b, _eigs) = create_diagonal_problem(n);
     let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
-    let mut stack = MemStack::new(&mut mem);
+    let stack = MemStack::new(&mut mem);
 
-    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, lanczos_project::Reorthogonalization::None, &mut stack, None)?;
+    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, lanczos_project::Reorthogonalization::None, stack, None)?;
 
     ensure!(
         output.decomposition.steps_taken == k,
@@ -370,6 +370,7 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
     // Golden values captured from a known-good run. Updated after fusing the
     // beta-subtraction and dot-product passes (4 sweeps -> 3), which changed
     // the FP accumulation order for alpha/beta values at ULP level.
+    #[expect(clippy::excessive_precision)]
     let golden_alphas: [f64; 5] = [
         52.97782051430146311,
         51.63983040769662125,
@@ -377,6 +378,7 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
         52.26404007970732124,
         49.98428350718381097,
     ];
+    #[expect(clippy::excessive_precision)]
     let golden_betas: [f64; 5] = [
         28.97606231351560879,
         26.11302677401963379,

@@ -204,6 +204,7 @@ pub fn lanczos_scratch<T: ComplexField>(operator: &impl LinOp<T>, par: Par) -> S
 /// A tuple containing $(\alpha_j, \text{Option}<\beta_j>)$. A [`None`] value for $\beta_j$ indicates
 /// that a numerical breakdown has occurred ($\beta_j$ is numerically zero), and the iteration
 /// should terminate. This happens when the Krylov subspace becomes invariant under $\mathbf{A}$.
+#[expect(clippy::too_many_arguments)]
 fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     operator: &O,
     mut w: MatMut<'_, T>,
