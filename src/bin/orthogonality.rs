@@ -177,7 +177,7 @@ fn main() -> Result<()> {
 
         // --- 3. Generate Bases ---
         // a. Execute the standard one-pass algorithm to get the reference basis V_k.
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, stack, None)?;
         let v_k_standard = standard_output.v_k;
         let steps = standard_output.decomposition.steps_taken;
         if steps == 0 {
@@ -193,6 +193,7 @@ fn main() -> Result<()> {
             b.as_ref(),
             &standard_output.decomposition,
             y_k_dummy.as_ref(),
+            faer::Par::Seq,
             stack,
         )?;
         let v_k_regenerated = pass_two_output.v_k;

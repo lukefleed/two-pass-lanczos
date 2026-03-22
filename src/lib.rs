@@ -74,10 +74,10 @@
 //!
 //! let num_steps = 3;
 //! // Standard one-pass method
-//! let x1 = lanczos(&a.as_ref(), b.as_ref(), num_steps, &mut stack, &linear_solver).unwrap();
+//! let x1 = lanczos(&a.as_ref(), b.as_ref(), num_steps, faer::Par::Seq, &mut stack, &linear_solver).unwrap();
 //!
 //! // Two-pass method (same result, less memory)
-//! let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), num_steps, &mut stack, linear_solver).unwrap();
+//! let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), num_steps, faer::Par::Seq, &mut stack, linear_solver).unwrap();
 //!
 //! // Results should be nearly identical
 //! assert!((x1.as_ref() - x2.as_ref()).norm_l2() < 1e-12);

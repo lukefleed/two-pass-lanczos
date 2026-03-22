@@ -240,6 +240,8 @@ struct LanczosIteration<'a, T: ComplexField, O: LinOp<T>> {
     beta_prev: T::Real,
     /// Cached breakdown tolerance to avoid recomputation per step.
     tolerance: T::Real,
+    /// The parallelism strategy for the operator application.
+    par: Par,
     /// The current iteration number (0-indexed internally).
     k: usize,
     /// The maximum number of iterations to perform.
@@ -257,6 +259,7 @@ where
     /// * `b`: The initial vector.
     /// * `max_k`: The maximum number of iterations.
     /// * `b_norm`: The pre-computed L2 norm of `b`.
+    /// * `par`: The parallelism strategy for operator application.
     ///
     /// # Returns
     /// A [`Result`] containing the new instance or a [`LanczosError`] if the input vector is zero.
@@ -265,6 +268,7 @@ where
         b: MatRef<'_, T>,
         max_k: usize,
         b_norm: T::Real,
+        par: Par,
     ) -> Result<Self, LanczosError> {
         let zero_threshold = breakdown_tolerance::<T::Real>();
         if b_norm <= zero_threshold {
@@ -283,6 +287,7 @@ where
             work: Mat::zeros(b.nrows(), 1),
             beta_prev: T::Real::zero_impl(),
             tolerance: breakdown_tolerance::<T::Real>(),
+            par,
             k: 0,
             max_k,
         })
@@ -302,7 +307,7 @@ where
             self.v_prev.as_ref(),
             T::Real::copy_impl(&self.beta_prev),
             T::Real::copy_impl(&self.tolerance),
-            Par::Seq,
+            self.par,
             stack,
         );
 
@@ -390,7 +395,7 @@ mod tests {
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let result = lanczos_standard(&a, b.as_ref(), 0, stack, None)?;
+        let result = lanczos_standard(&a, b.as_ref(), 0, Par::Seq, stack, None)?;
         assert_eq!(result.decomposition.steps_taken, 0);
         assert!(result.decomposition.alphas.is_empty());
         assert!(result.decomposition.betas.is_empty());
@@ -404,7 +409,7 @@ mod tests {
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let result = lanczos_pass_one(&a, b.as_ref(), 0, stack)?;
+        let result = lanczos_pass_one(&a, b.as_ref(), 0, Par::Seq, stack)?;
         assert_eq!(result.steps_taken, 0);
         Ok(())
     }
@@ -421,7 +426,7 @@ mod tests {
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), 1, stack, None)?;
+        let result = lanczos_standard(&a.as_ref(), b.as_ref(), 1, Par::Seq, stack, None)?;
         assert_eq!(result.decomposition.steps_taken, 1);
         assert_eq!(result.decomposition.alphas.len(), 1);
         assert!(result.decomposition.betas.is_empty());
@@ -466,7 +471,7 @@ mod tests {
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None).unwrap();
+        let result = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, stack, None).unwrap();
         assert_eq!(result.decomposition.steps_taken, 1);
     }
 
@@ -476,7 +481,7 @@ mod tests {
         let b: Mat<f64> = Mat::zeros(2, 1);
         let mut mem = MemBuffer::new(a.apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
-        assert!(lanczos_standard(&a, b.as_ref(), 2, stack, None).is_err());
+        assert!(lanczos_standard(&a, b.as_ref(), 2, Par::Seq, stack, None).is_err());
     }
 
     // --- PROPERTY TESTS (RUNNERS) ---
@@ -493,8 +498,8 @@ mod tests {
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
-        let pass_one_output = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, stack)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, stack, None)?;
+        let pass_one_output = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, Par::Seq, stack)?;
 
         ensure!(
             standard_output.decomposition.steps_taken == pass_one_output.steps_taken,
@@ -545,8 +550,8 @@ mod tests {
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let result_k = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
-        let result_k_plus_1 = lanczos_standard(&a.as_ref(), b.as_ref(), k + 1, stack, None)?;
+        let result_k = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, stack, None)?;
+        let result_k_plus_1 = lanczos_standard(&a.as_ref(), b.as_ref(), k + 1, Par::Seq, stack, None)?;
 
         let v_k = result_k.v_k.as_ref();
         let beta_k = result_k_plus_1.decomposition.betas[k - 1];
@@ -591,7 +596,7 @@ mod tests {
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, stack, None)?;
         let v_k_standard = standard_output.v_k.as_ref();
         let steps = standard_output.decomposition.steps_taken;
         let identity = Mat::<f64>::identity(steps, steps);
@@ -617,15 +622,15 @@ mod tests {
         let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
         let stack = MemStack::new(&mut mem);
 
-        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, stack, None)?;
+        let standard_output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, stack, None)?;
         let v_k_ref = standard_output.v_k;
         let steps = standard_output.decomposition.steps_taken;
 
-        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, stack)?;
+        let decomp = lanczos_pass_one(&a.as_ref(), b.as_ref(), k, Par::Seq, stack)?;
         let y_k = Mat::from_fn(steps, 1, |i, _| 0.1 * (i + 1) as f64);
 
         let pass_two_output =
-            lanczos_pass_two_with_basis(&a.as_ref(), b.as_ref(), &decomp, y_k.as_ref(), stack)?;
+            lanczos_pass_two_with_basis(&a.as_ref(), b.as_ref(), &decomp, y_k.as_ref(), Par::Seq, stack)?;
         let v_k_regenerated = pass_two_output.v_k;
 
         let drift = (v_k_ref - v_k_regenerated).squared_norm_l2();

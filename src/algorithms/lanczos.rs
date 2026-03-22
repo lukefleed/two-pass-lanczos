@@ -25,6 +25,7 @@ use super::{
     TridiagonalSystemView, breakdown_tolerance,
 };
 use faer::{
+    Par,
     dyn_stack::MemStack,
     matrix_free::LinOp,
     prelude::*,
@@ -45,6 +46,7 @@ use faer::{
 /// * `operator`: A linear operator implementing [`faer::matrix_free::LinOp`].
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The maximum number of iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
 /// * `stack`: A [`MemStack`] for temporary allocations.
 /// * `callback`: An optional mutable reference to a callback function invoked at each iteration.
 ///
@@ -56,6 +58,7 @@ pub fn lanczos_standard<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
     stack: &mut MemStack,
     mut callback: Option<&mut LanczosCallback<T>>,
 ) -> Result<LanczosOutput<T>, LanczosError>
@@ -87,7 +90,7 @@ where
     let mut betas = Vec::with_capacity(k.saturating_sub(1));
 
     // Initialize the stateful Lanczos iterator.
-    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm))?;
+    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm), par)?;
 
     // The first Lanczos vector is the normalized input vector `b`.
     v_k.col_mut(0)

@@ -139,7 +139,7 @@ macro_rules! generate_correctness_test {
             let mut stack = MemStack::new(&mut mem);
 
             // Run the specified Lanczos solver to get the approximate solution x_k.
-            let x_k = $solver_logic(&a.as_ref(), b.as_ref(), k, &mut stack)?;
+            let x_k = $solver_logic(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack)?;
 
             // Compute the relative error, a standard metric for vector approximation accuracy.
             let rel_err = (&x_k - &x_true).norm_l2() / x_true.norm_l2();
@@ -164,7 +164,7 @@ macro_rules! generate_correctness_test {
 // This is the most fundamental application of Krylov subspace methods.
 generate_correctness_test!(
     test_linear_solve_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = T_k^{-1} * e_1.
         // We use a general-purpose LU decomposition with partial pivoting, which is a
         // numerically stable method for solving dense linear systems.
@@ -177,7 +177,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| 1.0 / z,
     APPROX_TOLERANCE,
@@ -186,7 +186,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_linear_solve_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             if t_k.nrows() == 0 {
@@ -196,7 +196,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(t_k.as_ref().partial_piv_lu().solve(&e1))
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| 1.0 / z,
     APPROX_TOLERANCE,
@@ -207,7 +207,7 @@ generate_correctness_test!(
 // This validates the algorithm for a transcendental function, common in the solution of ODEs.
 generate_correctness_test!(
     test_matrix_exp_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = exp(T_k) * e_1.
         // Since T_k is symmetric, exp(T_k) can be stably computed via its spectral
         // decomposition: exp(T_k) = Q * exp(D) * Q^T.
@@ -239,7 +239,7 @@ generate_correctness_test!(
             // 4. Compute the final result vector.
             Ok(&f_t_k * &e1)
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.exp(),
     APPROX_TOLERANCE,
@@ -248,7 +248,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_matrix_exp_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             let steps = t_k.nrows();
@@ -273,7 +273,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.exp(),
     APPROX_TOLERANCE,
@@ -284,7 +284,7 @@ generate_correctness_test!(
 // This validates the algorithm for a polynomial, for which the result should be nearly exact.
 generate_correctness_test!(
     test_matrix_square_standard,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         // The solver for the projected problem computes y'_k = T_k^2 * e_1.
         // This can be computed directly by matrix multiplication.
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
@@ -297,7 +297,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos(a, b, k, stack, f_tk_solver)
+        lanczos(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.powi(2),
     EXACT_TOLERANCE,
@@ -306,7 +306,7 @@ generate_correctness_test!(
 
 generate_correctness_test!(
     test_matrix_square_two_pass,
-    |a, b, k, stack| {
+    |a, b, k, par, stack| {
         let f_tk_solver = |alphas: &[f64], betas: &[f64]| -> Result<Mat<f64>, anyhow::Error> {
             let t_k = assemble_tridiagonal(alphas, betas);
             if t_k.nrows() == 0 {
@@ -317,7 +317,7 @@ generate_correctness_test!(
             e1.as_mut()[(0, 0)] = 1.0;
             Ok(&f_t_k * &e1)
         };
-        lanczos_two_pass(a, b, k, stack, f_tk_solver)
+        lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
     |z: f64| z.powi(2),
     EXACT_TOLERANCE,
@@ -346,11 +346,11 @@ fn test_one_pass_two_pass_solution_equivalence() -> Result<()> {
 
     let mut mem1 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack1 = MemStack::new(&mut mem1);
-    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, &mut stack1, &f_tk_solver)?;
+    let x1 = lanczos(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack1, &f_tk_solver)?;
 
     let mut mem2 = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack2 = MemStack::new(&mut mem2);
-    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, &mut stack2, f_tk_solver)?;
+    let x2 = lanczos_two_pass(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack2, f_tk_solver)?;
 
     let diff = (&x1 - &x2).norm_l2();
     ensure!(diff < 1e-12, "One-pass vs two-pass differ by {}", diff);
@@ -371,7 +371,7 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
     let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
     let mut stack = MemStack::new(&mut mem);
 
-    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, Par::Seq, &mut stack, None)?;
 
     ensure!(
         output.decomposition.steps_taken == k,

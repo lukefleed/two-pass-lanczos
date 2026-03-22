@@ -188,6 +188,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    faer::Par::Seq,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;
@@ -199,6 +200,7 @@ fn run_worker(variant: &LanczosVariant) -> Result<()> {
                     &a.as_ref(),
                     b.as_ref(),
                     k,
+                    faer::Par::Seq,
                     MemStack::new(&mut stack_mem),
                     &f_tk_solver,
                 )?;

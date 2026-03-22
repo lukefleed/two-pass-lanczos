@@ -58,6 +58,7 @@ use faer::{
 /// * `operator`: A linear operator that implements [`faer::matrix_free::LinOp`].
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The maximum number of iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
 /// * `stack`: A `MemStack` for temporary allocations.
 ///
 /// # Returns
@@ -66,6 +67,7 @@ pub fn lanczos_pass_one<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
     stack: &mut MemStack,
 ) -> Result<LanczosDecomposition<T::Real>, LanczosError>
 where
@@ -87,7 +89,7 @@ where
 
     // The stateful Lanczos iterator handles the vector recurrence. In this pass,
     // we only care about the scalar results of each step.
-    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm))?;
+    let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm), par)?;
 
     let mut steps_taken = 0;
     let tolerance = breakdown_tolerance::<T::Real>();
@@ -140,12 +142,13 @@ pub fn lanczos_pass_two<T: ComplexField>(
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
     y_k: MatRef<'_, T>,
+    par: Par,
     stack: &mut MemStack,
 ) -> Result<Mat<T>, LanczosError>
 where
     T::Real: RealField,
 {
-    let (x_k, _) = lanczos_pass_two_impl(operator, b, decomposition, y_k, stack, false)?;
+    let (x_k, _) = lanczos_pass_two_impl(operator, b, decomposition, y_k, par, stack, false)?;
     Ok(x_k)
 }
 
@@ -160,13 +163,14 @@ pub fn lanczos_pass_two_with_basis<T: ComplexField>(
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
     y_k: MatRef<'_, T>,
+    par: Par,
     stack: &mut MemStack,
 ) -> Result<LanczosPassTwoOutput<T>, LanczosError>
 where
     T::Real: RealField,
 {
     // Call the core implementation, configured to store the basis for testing purposes.
-    let (x_k, v_k_option) = lanczos_pass_two_impl(operator, b, decomposition, y_k, stack, true)?;
+    let (x_k, v_k_option) = lanczos_pass_two_impl(operator, b, decomposition, y_k, par, stack, true)?;
     // The `v_k_option` is guaranteed to be `Some` because `store_basis` is true.
     let Some(v_k) = v_k_option else {
         unreachable!("v_k is guaranteed Some when store_basis is true");
@@ -189,10 +193,11 @@ fn lanczos_reconstruction_step<T: ComplexField, O: LinOp<T>>(
     v_prev: MatRef<'_, T>,
     alpha_j: T::Real,
     beta_prev: T::Real,
+    par: Par,
     stack: &mut MemStack,
 ) {
     // Pass 1: w = A * v_curr
-    operator.apply(w.rb_mut(), v_curr, Par::Seq, stack);
+    operator.apply(w.rb_mut(), v_curr, par, stack);
 
     // Pass 2 (fused): w -= beta_prev * v_prev + alpha_j * v_curr
     let beta_prev_scaled = T::from_real_impl(&beta_prev);
@@ -213,6 +218,7 @@ fn lanczos_pass_two_impl<T: ComplexField>(
     b: MatRef<'_, T>,
     decomposition: &LanczosDecomposition<T::Real>,
     y_k: MatRef<'_, T>,
+    par: Par,
     stack: &mut MemStack,
     store_basis: bool,
 ) -> Result<(Mat<T>, Option<Mat<T>>), LanczosError>
@@ -283,6 +289,7 @@ where
             v_prev.as_ref(),
             alpha_j,
             beta_prev,
+            par,
             stack,
         );
 

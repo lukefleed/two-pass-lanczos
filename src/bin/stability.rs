@@ -283,7 +283,7 @@ fn main() -> Result<()> {
         // from one iteration do not interfere with the next
         let stack = MemStack::new(&mut stack_mem);
 
-        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, stack, &*f_tk_solver) {
+        let x_k_standard = match lanczos(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, stack, &*f_tk_solver) {
             Ok(x) => x,
             Err(_) => {
                 log::warn!("Standard Lanczos failed at k={}. Stopping.", k);
@@ -291,7 +291,7 @@ fn main() -> Result<()> {
             }
         };
 
-        let x_k_two_pass = match lanczos_two_pass(&a.as_ref(), b.as_ref(), k, stack, &*f_tk_solver)
+        let x_k_two_pass = match lanczos_two_pass(&a.as_ref(), b.as_ref(), k, faer::Par::Seq, stack, &*f_tk_solver)
         {
             Ok(x) => x,
             Err(_) => {

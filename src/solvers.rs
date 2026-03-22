@@ -36,6 +36,7 @@ use faer::{
 /// * `operator`: A linear operator $\mathbf{A}$.
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The number of Lanczos iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
 /// * `stack`: A `MemStack` for temporary allocations.
 /// * `f_tk_solver`: A closure that takes the coefficients $(\alpha_j, \beta_j)$ defining the
 ///   tridiagonal matrix $\mathbf{T}_k$ and returns the vector $f(\mathbf{T}_k) \mathbf{e}_1$.
@@ -47,6 +48,7 @@ pub fn lanczos<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
     stack: &mut MemStack,
     mut f_tk_solver: F,
 ) -> Result<Mat<T>, LanczosError>
@@ -58,7 +60,7 @@ where
 {
     // 1. Perform the standard one-pass Lanczos iteration. This is memory-intensive
     // as it materializes the full basis matrix `v_k` in memory.
-    let standard_output = lanczos_standard(operator, b, k, stack, None)?;
+    let standard_output = lanczos_standard(operator, b, k, par, stack, None)?;
 
     // Handle the case where the iteration terminates immediately (e.g., zero input vector).
     if standard_output.decomposition.steps_taken == 0 {
@@ -100,7 +102,7 @@ where
         y_k_prime.as_ref(),
         // The final scaling factor.
         T::from_real_impl(&standard_output.decomposition.b_norm),
-        Par::Seq,
+        par,
     );
 
     Ok(x_k)
@@ -123,6 +125,7 @@ where
 /// * `operator`: A linear operator $\mathbf{A}$.
 /// * `b`: The starting vector. Must not be a zero vector.
 /// * `k`: The number of Lanczos iterations to perform.
+/// * `par`: The parallelism strategy for operator application.
 /// * `stack`: A `MemStack` for temporary allocations.
 /// * `f_tk_solver`: A closure that takes the coefficients $(\alpha_j, \beta_j)$ defining the
 ///   tridiagonal matrix $\mathbf{T}_k$ and returns the vector $f(\mathbf{T}_k) \mathbf{e}_1$.
@@ -134,6 +137,7 @@ pub fn lanczos_two_pass<T, O, F>(
     operator: &O,
     b: MatRef<'_, T>,
     k: usize,
+    par: Par,
     stack: &mut MemStack,
     mut f_tk_solver: F,
 ) -> Result<Mat<T>, LanczosError>
@@ -145,7 +149,7 @@ where
 {
     // 1. Perform the first pass, which is memory-light. It computes the scalar
     // decomposition and uses only a constant number of n-dimensional vectors.
-    let decomposition = lanczos_pass_one(operator, b, k, stack)?;
+    let decomposition = lanczos_pass_one(operator, b, k, par, stack)?;
 
     if decomposition.steps_taken == 0 {
         return Ok(Mat::zeros(b.nrows(), 1));
@@ -173,5 +177,5 @@ where
     // 4. Perform the second pass. This reconstructs the solution vector on-the-fly
     // by regenerating the basis vectors one at a time and accumulating the result,
     // thereby avoiding the storage of the full basis matrix.
-    lanczos_pass_two(operator, b, &decomposition, y_k_prime.as_ref(), stack)
+    lanczos_pass_two(operator, b, &decomposition, y_k_prime.as_ref(), par, stack)
 }

@@ -9,6 +9,7 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use faer::{
+    Par,
     dyn_stack::{MemBuffer, MemStack},
     matrix_free::LinOp,
     prelude::*,
@@ -391,6 +392,7 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
                 a,
                 b.as_ref(),
                 args.k_fixed,
+                Par::Seq,
                 MemStack::new(&mut stack_mem),
                 &f_tk_solver,
             )?;
@@ -402,6 +404,7 @@ fn run_worker(variant: LanczosVariant) -> Result<()> {
                 a,
                 b.as_ref(),
                 args.k_fixed,
+                Par::Seq,
                 MemStack::new(&mut stack_mem),
                 &f_tk_solver,
             )?;
