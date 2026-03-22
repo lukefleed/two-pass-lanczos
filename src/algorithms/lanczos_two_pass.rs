@@ -191,18 +191,14 @@ fn lanczos_reconstruction_step<T: ComplexField, O: LinOp<T>>(
     beta_prev: T::Real,
     stack: &mut MemStack,
 ) {
-    // 1. Apply the operator.
+    // Pass 1: w = A * v_curr
     operator.apply(w.rb_mut(), v_curr, Par::Seq, stack);
 
-    // 2. Orthogonalize against the previous vector using the stored \beta_{j-1}.
+    // Pass 2 (fused): w -= beta_prev * v_prev + alpha_j * v_curr
     let beta_prev_scaled = T::from_real_impl(&beta_prev);
-    zip!(w.rb_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
-        *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
-    });
-
-    // 3. Orthogonalize against the current vector using the stored \alpha_j.
     let alpha_scaled = T::from_real_impl(&alpha_j);
-    zip!(w.rb_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
+    zip!(w.rb_mut(), v_prev, v_curr).for_each(|unzip!(w_i, v_prev_i, v_curr_i)| {
+        *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
         *w_i = sub(w_i, &mul(&alpha_scaled, v_curr_i));
     });
 }
