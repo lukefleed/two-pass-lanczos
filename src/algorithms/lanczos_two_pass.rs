@@ -238,10 +238,7 @@ where
 
     let zero_threshold = breakdown_tolerance::<T::Real>();
     if decomposition.b_norm <= zero_threshold {
-        return Err(LanczosErrorKind::InputError(
-            "The initial vector `b` must not be a zero vector.".to_string(),
-        )
-        .into());
+        return Err(LanczosErrorKind::ZeroInputVector.into());
     }
 
     if decomposition.steps_taken == 0 {

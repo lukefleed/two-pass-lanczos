@@ -266,10 +266,7 @@ where
     ) -> Result<Self, LanczosError> {
         let zero_threshold = breakdown_tolerance::<T::Real>();
         if b_norm <= zero_threshold {
-            return Err(LanczosErrorKind::InputError(
-                "Input vector `b` must not be a zero vector.".to_string(),
-            )
-            .into());
+            return Err(LanczosErrorKind::ZeroInputVector.into());
         }
 
         // Normalize the initial vector efficiently using the pre-computed norm.

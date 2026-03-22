@@ -25,6 +25,10 @@ pub(crate) enum LanczosErrorKind {
     )]
     Breakdown { k: usize },
 
+    /// The input vector `b` is numerically zero and cannot be normalized.
+    #[error("input vector `b` must not be a zero vector")]
+    ZeroInputVector,
+
     /// Indicates that the dimensions of the operator and the input vector are
     /// incompatible for a matrix-vector product.
     #[error(
@@ -107,6 +111,15 @@ mod tests {
         let expected_message =
             "Invalid input parameter: The initial vector `b` must not be a zero vector.";
         assert_eq!(error.to_string(), expected_message);
+    }
+
+    #[test]
+    fn test_zero_input_vector_error_message() {
+        let error = LanczosError(LanczosErrorKind::ZeroInputVector);
+        assert_eq!(
+            error.to_string(),
+            "input vector `b` must not be a zero vector"
+        );
     }
 
     #[test]
