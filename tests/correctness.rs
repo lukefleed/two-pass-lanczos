@@ -323,3 +323,81 @@ generate_correctness_test!(
     EXACT_TOLERANCE,
     "Two-pass matrix square"
 );
+
+// --- Regression Test ---
+// This test locks down the exact Lanczos tridiagonal coefficients for a fixed problem,
+// ensuring that any refactoring that alters floating-point summation order is detected.
+
+#[test]
+fn test_golden_value_lanczos_coefficients() -> Result<()> {
+    use lanczos_project::algorithms::lanczos::lanczos_standard;
+
+    let n = 100;
+    let k = 10;
+    let (a, b, _eigs) = create_diagonal_problem(n);
+    let mut mem = MemBuffer::new(a.as_ref().apply_scratch(1, Par::Seq));
+    let mut stack = MemStack::new(&mut mem);
+
+    let output = lanczos_standard(&a.as_ref(), b.as_ref(), k, &mut stack, None)?;
+
+    ensure!(
+        output.decomposition.steps_taken == k,
+        "Expected {} steps, got {}",
+        k,
+        output.decomposition.steps_taken
+    );
+
+    // Golden values captured from a known-good run. Any refactoring that changes
+    // FP summation order will cause these to drift beyond tolerance.
+    let golden_alphas: [f64; 5] = [
+        52.97782051430146,
+        51.639830407696635,
+        47.56379230698903,
+        52.26404007970733,
+        49.98428350718383,
+    ];
+    let golden_betas: [f64; 5] = [
+        28.97606231351561,
+        26.113026774019634,
+        24.960084107704876,
+        24.572309903028827,
+        25.27009528124149,
+    ];
+
+    let tol = 1e-14;
+    for (i, (&actual, &expected)) in output
+        .decomposition
+        .alphas
+        .iter()
+        .zip(golden_alphas.iter())
+        .enumerate()
+    {
+        ensure!(
+            (actual - expected).abs() < tol,
+            "Alpha mismatch at index {}: got {}, expected {} (diff = {})",
+            i,
+            actual,
+            expected,
+            (actual - expected).abs()
+        );
+    }
+
+    for (i, (&actual, &expected)) in output
+        .decomposition
+        .betas
+        .iter()
+        .zip(golden_betas.iter())
+        .enumerate()
+    {
+        ensure!(
+            (actual - expected).abs() < tol,
+            "Beta mismatch at index {}: got {}, expected {} (diff = {})",
+            i,
+            actual,
+            expected,
+            (actual - expected).abs()
+        );
+    }
+
+    Ok(())
+}
