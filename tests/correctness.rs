@@ -224,20 +224,13 @@ generate_correctness_test!(
                 .map_err(|e| anyhow!("EVD failed: {:?}", e))?;
             let q_tk = evd.U();
             let d_lambda = evd.S();
-            // 2. Compute exp(D) by applying exp() to the eigenvalues.
-            let f_d = Mat::from_fn(
-                steps,
-                steps,
-                |i, j| {
-                    if i == j { d_lambda[i].exp() } else { 0.0 }
-                },
-            );
-            // 3. Reconstruct exp(T_k) = Q * exp(D) * Q^T.
-            let f_t_k = q_tk * &f_d * q_tk.adjoint();
+            // 2. Compute exp(T_k) * e_1 via column-wise scaling:
+            //    Q * diag(exp(λ)) * Q^T * e_1, avoiding the k×k dense allocation.
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
-            // 4. Compute the final result vector.
-            Ok(&f_t_k * &e1)
+            let qt_e1 = q_tk.adjoint() * &e1;
+            let scaled = Mat::from_fn(steps, 1, |i, _| qt_e1[(i, 0)] * d_lambda[i].exp());
+            Ok(q_tk * &scaled)
         };
         lanczos(a, b, k, par, Reorthogonalization::None, stack, f_tk_solver)
     },
@@ -261,17 +254,11 @@ generate_correctness_test!(
                 .map_err(|e| anyhow!("EVD failed: {:?}", e))?;
             let q_tk = evd.U();
             let d_lambda = evd.S();
-            let f_d = Mat::from_fn(
-                steps,
-                steps,
-                |i, j| {
-                    if i == j { d_lambda[i].exp() } else { 0.0 }
-                },
-            );
-            let f_t_k = q_tk * &f_d * q_tk.adjoint();
             let mut e1 = Mat::zeros(steps, 1);
             e1.as_mut()[(0, 0)] = 1.0;
-            Ok(&f_t_k * &e1)
+            let qt_e1 = q_tk.adjoint() * &e1;
+            let scaled = Mat::from_fn(steps, 1, |i, _| qt_e1[(i, 0)] * d_lambda[i].exp());
+            Ok(q_tk * &scaled)
         };
         lanczos_two_pass(a, b, k, par, stack, f_tk_solver)
     },
