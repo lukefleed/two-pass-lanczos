@@ -380,21 +380,22 @@ fn test_golden_value_lanczos_coefficients() -> Result<()> {
         output.decomposition.steps_taken
     );
 
-    // Golden values captured from a known-good run. Any refactoring that changes
-    // FP summation order will cause these to drift beyond tolerance.
+    // Golden values captured from a known-good run. Updated after fusing the
+    // beta-subtraction and dot-product passes (4 sweeps -> 3), which changed
+    // the FP accumulation order for alpha/beta values at ULP level.
     let golden_alphas: [f64; 5] = [
-        52.97782051430146,
-        51.639830407696635,
-        47.56379230698903,
-        52.26404007970733,
-        49.98428350718383,
+        52.97782051430146311,
+        51.63983040769662125,
+        47.56379230698905758,
+        52.26404007970732124,
+        49.98428350718381097,
     ];
     let golden_betas: [f64; 5] = [
-        28.97606231351561,
-        26.113026774019634,
-        24.960084107704876,
-        24.572309903028827,
-        25.27009528124149,
+        28.97606231351560879,
+        26.11302677401963379,
+        24.96008410770487984,
+        24.57230990302882390,
+        25.27009528124148119,
     ];
 
     let tol = 1e-14;

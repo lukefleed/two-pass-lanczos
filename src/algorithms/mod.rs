@@ -36,7 +36,7 @@ pub mod lanczos;
 pub mod lanczos_two_pass;
 
 use crate::error::{LanczosError, LanczosErrorKind};
-use faer::traits::math_utils::{mul, sub};
+use faer::traits::math_utils::{add, mul, sub};
 use faer::{
     Par,
     dyn_stack::MemStack,
@@ -147,10 +147,10 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// This function implements the core three-term recurrence:
 /// $\beta_j \mathbf{v}_{j+1} = \mathbf{A}\mathbf{v}_j - \alpha_j \mathbf{v}_j - \beta_{j-1}\mathbf{v}_{j-1}$.
 ///
-/// The implementation follows the standard formulation, ensuring that the newly
-/// computed (unnormalized) vector is orthogonal to the two preceding basis vectors.
-/// The result is written to a pre-allocated mutable view `w` to avoid heap allocations
-/// within the iterative loop.
+/// The implementation fuses the beta-subtraction and dot-product into a single memory
+/// pass, reducing the number of vector sweeps from 4 to 3 compared to the naive
+/// formulation. The result is written to a pre-allocated mutable view `w` to avoid
+/// heap allocations within the iterative loop.
 ///
 /// # Arguments
 /// * `operator`: The linear operator $\mathbf{A}$.
@@ -158,6 +158,8 @@ fn breakdown_tolerance<T: RealField>() -> T {
 /// * `v_curr`: The current Lanczos vector $\mathbf{v}_j$.
 /// * `v_prev`: The previous Lanczos vector $\mathbf{v}_{j-1}$.
 /// * `beta_prev`: The previous off-diagonal coefficient $\beta_{j-1}$.
+/// * `tolerance`: The breakdown detection tolerance (typically `eps * 1000`).
+/// * `par`: The parallelism strategy for the operator application.
 /// * `stack`: A [`MemStack`] for temporary allocations required by the operator's `apply` method.
 ///
 /// # Returns
@@ -170,40 +172,38 @@ fn lanczos_recurrence_step<T: ComplexField, O: LinOp<T>>(
     v_curr: MatRef<'_, T>,
     v_prev: MatRef<'_, T>,
     beta_prev: T::Real,
+    tolerance: T::Real,
+    par: Par,
     stack: &mut MemStack,
 ) -> (T::Real, Option<T::Real>) {
-    // 1. Apply the operator: w = A * v_curr. This is typically the most
-    // computationally intensive part of the step.
-    operator.apply(w.rb_mut(), v_curr, Par::Seq, stack);
+    // Pass 1: w = A * v_curr. This is typically the most computationally
+    // intensive part of the step.
+    operator.apply(w.rb_mut(), v_curr, par, stack);
 
-    // 2. First orthogonalization step (against v_{j-1}).
-    // This computes w <- w - \beta_{j-1} * v_{j-1} in-place.
-    // The use of `zip!` ensures that this loop can be autovectorized by the
-    // compiler
+    // Pass 2 (fused): w -= beta_prev * v_prev AND alpha = v_curr^H * w.
+    // Fusing these avoids a separate memory pass for the dot product.
+    // The original code performed these as two separate passes (subtract, then
+    // dot product). By combining them into a single traversal we reduce memory
+    // traffic from 4 vector sweeps to 3.
     let beta_prev_scaled = T::from_real_impl(&beta_prev);
-    zip!(w.rb_mut(), v_prev).for_each(|unzip!(w_i, v_prev_i)| {
+    let mut alpha_acc = T::zero_impl();
+    zip!(w.rb_mut(), v_prev, v_curr).for_each(|unzip!(w_i, v_prev_i, v_curr_i)| {
         *w_i = sub(w_i, &mul(&beta_prev_scaled, v_prev_i));
+        alpha_acc = add(&alpha_acc, &mul(&T::conj_impl(v_curr_i), &*w_i));
     });
+    let alpha = T::real_part_impl(&alpha_acc);
 
-    // 3. Compute the diagonal element \alpha_j = v_j^H * w.
-    // At this stage, w = A*v_j - \beta_{j-1}*v_{j-1}, which is the
-    // intermediate vector for computing \alpha_j. Since A is Hermitian, \alpha_j is real.
-    let alpha = T::real_part_impl(&(v_curr.adjoint() * w.rb())[(0, 0)]);
-
-    // 4. Second orthogonalization step (against v_j).
-    // This computes w <- w - \alpha_j * v_j in-place.
+    // Pass 3: w -= alpha * v_curr (second orthogonalization step).
     let alpha_scaled = T::from_real_impl(&alpha);
     zip!(w.rb_mut(), v_curr).for_each(|unzip!(w_i, v_curr_i)| {
         *w_i = sub(w_i, &mul(&alpha_scaled, v_curr_i));
     });
 
-    // 5. Compute the off-diagonal element \beta_j = ||w||_2.
-    // The vector w now holds the unnormalized next Lanczos vector.
+    // Norm via faer's stable SIMD norm_l2 (avoids overflow in manual squared-sum).
     let beta = w.rb().norm_l2();
 
-    // 6. Check for numerical breakdown. If \beta_j is close to zero, the Krylov
+    // Check for numerical breakdown. If beta_j is close to zero, the Krylov
     // subspace is (numerically) invariant under A, and the iteration must stop.
-    let tolerance = breakdown_tolerance::<T::Real>();
     if beta <= tolerance {
         (alpha, None)
     } else {
@@ -238,6 +238,8 @@ struct LanczosIteration<'a, T: ComplexField, O: LinOp<T>> {
     work: Mat<T>,
     /// The previous beta coefficient, $\beta_{j-1}$.
     beta_prev: T::Real,
+    /// Cached breakdown tolerance to avoid recomputation per step.
+    tolerance: T::Real,
     /// The current iteration number (0-indexed internally).
     k: usize,
     /// The maximum number of iterations to perform.
@@ -280,6 +282,7 @@ where
             v_curr: v1,
             work: Mat::zeros(b.nrows(), 1),
             beta_prev: T::Real::zero_impl(),
+            tolerance: breakdown_tolerance::<T::Real>(),
             k: 0,
             max_k,
         })
@@ -298,6 +301,8 @@ where
             self.v_curr.as_ref(),
             self.v_prev.as_ref(),
             T::Real::copy_impl(&self.beta_prev),
+            T::Real::copy_impl(&self.tolerance),
+            Par::Seq,
             stack,
         );
 
@@ -443,6 +448,8 @@ mod tests {
             v_curr.as_ref(),
             v_prev.as_ref(),
             beta_prev,
+            breakdown_tolerance::<f64>(),
+            Par::Seq,
             stack,
         );
 
