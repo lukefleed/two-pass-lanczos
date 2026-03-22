@@ -90,6 +90,7 @@ where
     let mut lanczos_iter = LanczosIteration::new(operator, b, k, T::Real::copy_impl(&b_norm))?;
 
     let mut steps_taken = 0;
+    let tolerance = breakdown_tolerance::<T::Real>();
 
     for i in 0..k {
         if let Some(step) = lanczos_iter.next_step(stack) {
@@ -97,7 +98,6 @@ where
             steps_taken += 1;
 
             // Check for breakdown, which terminates the process.
-            let tolerance = breakdown_tolerance::<T::Real>();
             if step.beta <= tolerance {
                 break;
             }

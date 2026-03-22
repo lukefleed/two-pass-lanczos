@@ -94,6 +94,7 @@ where
         .copy_from(lanczos_iter.v_curr.as_ref().col(0));
 
     let mut steps_taken = 0;
+    let tolerance = breakdown_tolerance::<T::Real>();
 
     for i in 0..k {
         if let Some(step) = lanczos_iter.next_step(stack) {
@@ -119,7 +120,6 @@ where
 
             // A zero (or numerically zero) beta indicates that breakdown has occurred.
             // The Krylov subspace is invariant, and the iteration must terminate.
-            let tolerance = breakdown_tolerance::<T::Real>();
             if step.beta <= tolerance {
                 break;
             }
