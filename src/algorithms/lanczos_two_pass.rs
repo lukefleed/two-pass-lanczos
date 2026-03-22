@@ -155,7 +155,6 @@ where
 /// regenerated basis matrix $\mathbf{V}'_k$. It is used only during testing
 /// and is used to verify the numerical stability and faithfulness of the regeneration process
 /// by allowing a direct comparison with the basis stored by [`crate::algorithms::lanczos::lanczos_standard`].
-#[allow(dead_code)]
 pub fn lanczos_pass_two_with_basis<T: ComplexField>(
     operator: &impl LinOp<T>,
     b: MatRef<'_, T>,
@@ -169,10 +168,10 @@ where
     // Call the core implementation, configured to store the basis for testing purposes.
     let (x_k, v_k_option) = lanczos_pass_two_impl(operator, b, decomposition, y_k, stack, true)?;
     // The `v_k_option` is guaranteed to be `Some` because `store_basis` is true.
-    Ok(LanczosPassTwoOutput {
-        x_k,
-        v_k: v_k_option.unwrap(),
-    })
+    let Some(v_k) = v_k_option else {
+        unreachable!("v_k is guaranteed Some when store_basis is true");
+    };
+    Ok(LanczosPassTwoOutput { x_k, v_k })
 }
 
 /// A specialized recurrence step for the basis reconstruction in the second pass.
